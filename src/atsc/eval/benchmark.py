@@ -108,6 +108,46 @@ def improvement_table(df: pd.DataFrame, baseline: str = "fixed_time",
     return pd.DataFrame(out).T
 
 
+# two-sided 95 % Student t quantiles by degrees of freedom (no SciPy dependency)
+_T95 = {1: 12.706, 2: 4.303, 3: 3.182, 4: 2.776, 5: 2.571, 6: 2.447, 7: 2.365, 8: 2.306,
+        9: 2.262, 10: 2.228, 11: 2.201, 12: 2.179, 13: 2.160, 14: 2.145, 15: 2.131,
+        16: 2.120, 17: 2.110, 18: 2.101, 19: 2.093, 20: 2.086, 25: 2.060, 30: 2.042}
+
+
+def ci95(values) -> float:
+    """Half-width of the 95 % confidence interval of the mean (Student t); nan below 2 values."""
+    v = [float(x) for x in values if x == x]
+    n = len(v)
+    if n < 2:
+        return float("nan")
+    mean = sum(v) / n
+    sd = (sum((x - mean) ** 2 for x in v) / (n - 1)) ** 0.5
+    dof = n - 1
+    t = _T95.get(dof) or _T95[max(k for k in _T95 if k <= dof)] if dof <= 30 else 1.96
+    return t * sd / n ** 0.5
+
+
+def paired_table(df: pd.DataFrame, target: str = "rl", baseline: str = "fixed_time",
+                 metric: str = "avg_waiting_time") -> pd.DataFrame:
+    """``target`` against ``baseline`` on the same seeds: per scenario the mean of the
+    per-seed differences (target minus baseline), its 95 % interval, the change in % of the
+    baseline's mean, and in how many seeds the target was lower."""
+    out = {}
+    for scen, g in df.groupby("scenario", sort=False):
+        wide = g.pivot(index="seed", columns="controller", values=metric)
+        if target not in wide or baseline not in wide:
+            continue
+        wide = wide[[target, baseline]].dropna()
+        if wide.empty:
+            continue
+        diff = wide[target] - wide[baseline]
+        out[scen] = {"target": wide[target].mean(), "baseline": wide[baseline].mean(),
+                     "diff": diff.mean(), "ci95": ci95(diff),
+                     "change_%": 100.0 * diff.mean() / wide[baseline].mean(),
+                     "lower_in": int((diff < 0).sum()), "seeds": int(len(diff))}
+    return pd.DataFrame(out).T
+
+
 def _print_summary(summary: pd.DataFrame, df: pd.DataFrame) -> None:
     log.info("\n===== MEAN METRICS (per scenario x controller) =====\n%s",
              summary.round(2).to_string())
@@ -139,6 +179,18 @@ def _signed(value: float) -> str:
     return ("\u2212" if value < 0 else "+" if value > 0 else "") + text
 
 
+def _signed_s(value: float) -> str:
+    return ("\u2212" if value < 0 else "+" if value > 0 else "") + f"{abs(value):.1f}"
+
+
+def _shown(path: Path) -> str:
+    """A path as the documents write it: relative to the project root where possible."""
+    try:
+        return path.resolve().relative_to(project_root().resolve()).as_posix()
+    except ValueError:
+        return path.name
+
+
 def _write_markdown_table(summary: pd.DataFrame, df: pd.DataFrame, path: Path, cfg) -> None:
     impr = improvement_table(df)
     seeds = sorted(int(s) for s in df["seed"].unique())
@@ -165,9 +217,31 @@ def _write_markdown_table(summary: pd.DataFrame, df: pd.DataFrame, path: Path, c
     lines = ["# Benchmark Summary", ""]
     lines.append(f"Grid: {cfg.network.grid_rows}x{cfg.network.grid_cols} | "
                  f"seeds: {seeds} | episode: {cfg.eval.episode_seconds}s | "
-                 f"means over the seeds of outputs/benchmark_results.csv\n")
+                 f"means over the seeds of {_shown(path.parent / 'benchmark_results.csv')}\n")
     lines.append("## Average waiting time (s) by scenario and controller\n")
     lines.append(pivot("avg_waiting_time", 1))
+    if len(seeds) > 1:
+        lines.append("\n## Waiting time: RL against each baseline, seed by seed\n")
+        lines.append("Each row compares the two controllers on the same seeds (identical traffic). "
+                     "*Difference* is RL minus the baseline, averaged over the seeds, with its "
+                     "95 % confidence interval (Student t): negative means RL waits less, and an "
+                     "interval that does not reach 0 means the difference is beyond seed-to-seed "
+                     "noise. *RL lower in* counts the seeds where RL's waiting time was lower.\n")
+        for base in [c for c in controllers if c != "rl"]:
+            pt = paired_table(df, "rl", base)
+            if pt.empty:
+                continue
+            rows = []
+            for scen in order:
+                if scen in pt.index:
+                    r = pt.loc[scen]
+                    rows.append([scen, f"{r['baseline']:.1f}", f"{r['target']:.1f}",
+                                 f"{_signed_s(r['diff'])} \u00b1 {r['ci95']:.1f}",
+                                 _signed(r["change_%"]), f"{int(r['lower_in'])} of {int(r['seeds'])}"])
+            lines.append(f"**RL vs {base}**\n")
+            lines.append(_md_table(["scenario", f"{base} (s)", "rl (s)", "difference (s)",
+                                    "change", "RL lower in"], rows, ["l", "r", "r", "r", "r", "r"]))
+            lines.append("")
     lines.append("\n## Average queue (veh/intersection)\n")
     lines.append(pivot("avg_queue", 1))
     lines.append("\n## Throughput (vehicles completed)\n")

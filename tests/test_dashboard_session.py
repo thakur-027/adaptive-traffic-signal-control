@@ -60,7 +60,8 @@ def test_hello_describes_the_whole_dashboard(session):
     assert hello["qka"] == QK_ALPHABET and hello["nv"] == COLOUR_VARIANTS
     assert '"' not in QK_ALPHABET and "\\" not in QK_ALPHABET
     assert [e[0] for e in hello["emg"]] == ["ambulance", "police", "fire"]
-    assert {name for name, _d in hello["scen"]} == {"low", "medium", "high", "rush"}
+    assert [name for name, _d in hello["scen"]] == ["low", "medium", "high", "rush", "surge"]
+    assert all(description for _name, description in hello["scen"])
     assert hello["speeds"] == sorted(hello["speeds"]) and 1 in hello["speeds"]
     assert abs(sum(hello["mix"].values()) - 1.0) < 1e-3
     assert hello["state"]["kf"] == 1
@@ -264,6 +265,39 @@ def test_bad_scenario_never_freezes_the_session(tmp_path):
     for _ in range(5):
         s.tick()
     assert s.tick_count == before + 5 and s.scenario == scenario == "rush"
+
+
+@pytest.mark.parametrize("scenario", ["low", "medium", "high", "rush", "surge"])
+def test_every_traffic_level_restarts_the_race_on_that_scenario(tmp_path, scenario):
+    """The five traffic buttons of the page: each one is accepted, restarts the run from
+    second 0 on that scenario for both systems, and the frames say which one is running."""
+    start = "medium" if scenario == "rush" else "rush"
+    s = DashboardSession(_config(tmp_path, default_scenario=start))
+    s.play()
+    for _ in range(6):
+        s.tick()
+    episode, elapsed = s.episode, s.rl.env._elapsed
+    assert elapsed > 0 and s.scenario == start
+    s.submit({"a": "scenario", "v": scenario})
+    s.tick()
+    assert s.scenario == scenario
+    assert s.episode == episode + 1, "the run did not restart"
+    assert s.rl.env._elapsed < elapsed and s.rl.env._elapsed == s.ft.env._elapsed
+    frame = _json(s.snapshot())
+    assert frame["sc"] == scenario and frame["kf"] == 1 and frame["ep"] == episode + 1
+    s.set_speed(4)
+    for _ in range(40):
+        s.tick()
+    assert s.scenario == scenario
+    # both systems still get identical traffic on the new scenario
+    assert s.rl.live_metrics()[2] + s.ft.live_metrics()[2] > 0, "no vehicle finished a trip"
+
+
+def test_surge_demand_rises_to_a_peak_and_falls_again():
+    """``surge`` is the one time-varying scenario of the shipped configuration."""
+    raw = yaml.safe_load((ROOT / "config.yaml").read_text(encoding="utf-8"))
+    assert raw["scenarios"]["surge"]["time_varying"] is True
+    assert [name for name, spec in raw["scenarios"].items() if spec["time_varying"]] == ["surge"]
 
 
 def test_emergency_cap_is_enforced(tmp_path):

@@ -1,800 +1,361 @@
-# EXPLAINER.md — Study & Viva Reference
+# How it works, in plain language
 
-**Project:** AI-Based Adaptive Traffic Signal Control System using Reinforcement Learning
-**Author:** Aditya Kumar
-
-> This document is grounded in the actual repository. Every hyperparameter and design
-> choice cites the file it comes from. Where a "commonly assumed" fact differs from the
-> code, it is flagged with **⚠ CORRECTION**.
->
-> **Two corrections to the headline facts up front (verified against the code):**
-> 1. **Emergency clearance is NOT ~10× faster.** In the shipped model the measured
->    improvement is **1.4× (low) to 4.5× (rush)** — source `outputs/benchmark_results.csv`.
->    The "10×" came from an earlier, more-saturated rush setting that was later changed.
->    Quote the real range in the viva.
-> 2. **Rush hour is modelled as *sustained* heavy demand, not a time-varying surge**
->    (`config.yaml → scenarios.rush: {arrival_scale: 1.00, time_varying: false}`). This is
->    deliberate and tied to the one honest limitation (§11).
->
-> Everything else in the brief checks out: **43 Python modules** (`find src -name '*.py'`),
-> **189 tests** (18 files in `tests/`), **observation dimension = 23** (`src/atsc/envs/spaces.py`),
-> results **Low −16% / Medium −28% / High −48% / Rush −61%, mean ≈38%**
-> (`outputs/benchmark_summary.md`), and the safety machine verified over **18,000 random
-> requests** (`tests/test_phases_safety.py`, 6000 steps × 3 seeds).
+A walkthrough of the project for a reader who knows some Python but not reinforcement
+learning or traffic engineering. Each section names the file that implements what it
+describes. Results are not repeated here: the headline tables are in [README.md](README.md)
+and every table is in [REPORT.md](REPORT.md) §6.
 
 ---
 
-## 1. ONE-PARAGRAPH SUMMARY
+## 1. The idea in one paragraph
 
-Traffic lights at most junctions run on **fixed timers** — they give each direction the
-same green every cycle no matter how many cars are actually waiting. That wastes time and
-fuel whenever traffic is lopsided. Our project replaces those timers with an **AI that
-watches the traffic and decides which direction to give green to, second by second.** We
-put one AI "brain" (a neural network trained by **reinforcement learning** — learning by
-trial and error from rewards) at **each of four intersections arranged in a 2×2 grid**, and
-we let each brain also see its neighbours so they can coordinate into a **"green wave."**
-The whole thing runs in a traffic simulator, and we measured it against the traditional
-fixed-timer method on identical traffic: our system cut the **average time a vehicle spends
-waiting by about 15% in light traffic up to about 61% in heavy rush-hour traffic (≈38% on
-average)**, while never allowing an unsafe light combination and clearing **emergency
-vehicles several times faster**. It also comes with a live web dashboard that shows the AI
-racing the old method side-by-side.
+Most traffic lights run on fixed timers: each direction gets the same green every cycle,
+however many vehicles are waiting. This project replaces the timer with learning agents, one
+per junction of a 2 × 2 grid. Every five seconds each agent looks at its own queues, at what
+its neighbours are doing and at how fast traffic is arriving, and asks for the phase it
+thinks is best. A separate safety layer, which the agents cannot bypass, turns that request
+into lamp changes with the mandatory amber and all-red. The agents learn by trial and error
+in a simulator, rewarded for short waits. The result is compared with a fixed timer and with
+max-pressure, a strong hand-written adaptive rule, on identical traffic.
 
 ---
 
-## 2. PROBLEM & MOTIVATION
+## 2. Why this is a learning problem
 
-**Plain English.** A fixed-time signal is like a metronome: North–South gets 30 seconds,
-East–West gets 30 seconds, forever, regardless of whether one side is jammed and the other
-is empty. Real traffic is *asymmetric* (a main road carries far more cars than a side
-street) and *changes over the day*. A metronome can't adapt, so cars idle at red lights
-with nobody crossing the other way — wasting **time, fuel, and producing emissions** for no
-benefit. Adaptive control means: *look at the queues, then spend green where the cars
-actually are.*
+A fixed-time signal is a metronome. Real traffic is lopsided (a main road carries far more
+than a side street) and changes over the day, so a metronome leaves vehicles waiting at a red
+light while nobody crosses.
 
-**Why this is a reinforcement-learning (RL) problem.** Controlling a signal is a
-**sequential decision problem under uncertainty**: each decision (hold or switch) changes
-the queues you'll face next, cars keep arriving randomly, and a choice that looks good now
-can cause a jam later. That is exactly what RL is built for — an **agent** learns a
-**policy** (a rule mapping situation → action) that maximises **long-term** reward, not just
-the immediate step. Unlike a hand-tuned rule, RL discovers the timing strategy on its own
-from experience.
+Controlling a signal is a **sequence of decisions under uncertainty**. Holding a green now
+changes the queues you face in thirty seconds; vehicles keep arriving at random; every change
+of phase costs five seconds in which nobody moves. Reinforcement learning is built for this:
+an **agent** learns a **policy**, a rule from situation to action, that maximises reward over
+the long run rather than at the next step.
 
-**Concrete anchors (from our own simulator, honest numbers).** In our built-in simulator,
-a standard fixed-timer produces an average waiting time of about **26 s per vehicle in light
-traffic and about 113 s in rush hour** (`outputs/benchmark_summary.md`). The literature we
-cite in `REPORT.md` reports fixed-time waits of 50–70 s per intersection and DRL reductions
-of 30–50%. Our design targets — and reaches under load — the **40–50% band** promised to
-reviewers.
-
-**Why not just a smarter timer or a sensor loop?** A sensor-actuated timer (extend green
-while a loop detector sees cars) is reactive and *local* — it has no notion of downstream
-queues, neighbour coordination, or long-term consequences, and it can't create green waves.
-RL optimises the *whole* trajectory of consequences and coordinates across junctions
-through neighbour observations (§7).
+A hand-written rule can also be adaptive. Max-pressure serves whichever phase has the larger
+queue imbalance and is provably good at keeping throughput up. It is the honest yardstick,
+and the results are stated against it as well as against the timer.
 
 ---
 
-## 3. BIG-PICTURE ARCHITECTURE
-
-**Plain English.** Every 5 simulated seconds, each intersection's AI looks at its traffic,
-picks which direction *should* be green, a safety module turns that wish into a physically
-safe light sequence, the simulator advances 5 seconds, and the AI gets a score (reward)
-telling it how good that stretch was. During training it uses those scores to improve.
-
-**The control loop (one decision every `decision_interval_s = 5 s`; simulation resolution
-`step_length_s = 1.0 s`; both in `config.yaml → signal`/`sim`).** A single call to
-`MultiAgentTrafficEnv.step()` (`src/atsc/envs/traffic_env.py`) advances **5 one-second
-ticks**.
+## 3. How the pieces fit
 
 ```
-            ┌──────────────────────────────────────────────────────────────┐
-            │  SIMULATION BACKEND  (SUMO  or  built-in NumPy sim)          │
-            │  src/atsc/sim/{sumo_backend,mini_backend}.py                  │
-            └───────────────┬──────────────────────────────▲───────────────┘
-        queues, waits,      │                              │ green approaches
-        emergency flags     ▼                              │ (per second)
-            ┌──────────────────────────┐        ┌──────────────────────────┐
-            │ OBSERVATION BUILDER       │        │ SAFETY PHASE FSM          │
-            │ src/atsc/envs/spaces.py   │        │ src/atsc/envs/phases.py   │
-            │ -> 23-value vector/agent  │        │ min/max green, yellow,    │
-            └───────────────┬───────────┘        │ all-red -> safe greens    │
-      state s_i (23 dims)   │                    └───────────▲──────────────┘
-                            ▼                     target phase │ a_i
-            ┌──────────────────────────┐                      │
-            │ AGENT (per intersection)  │──────────────────────┘
-            │ Double+Dueling DQN        │   choose next green phase (argmax Q)
-            │ src/atsc/agents/*.py      │
-            └───────────────▲───────────┘
-              reward r_i     │  (training only) store (s,a,r,s') -> learn()
-            ┌───────────────┴───────────┐
-            │ REWARD  traffic_env._rewards│  -delay -pressure -switch +emergency
-            └────────────────────────────┘
+ config.yaml ──► simulator ──► observation (33 numbers per junction)
+                    ▲                     │
+                    │                     ▼
+              lamp state            agent (one per junction, shared weights)
+                    ▲                     │  "I want phase EW"
+                    │                     ▼
+               safety state machine ◄── request
+               (min/max green, amber, all-red)
 ```
 
-Mermaid version (same loop):
+One loop, repeated every 5 simulated seconds:
 
-```mermaid
-flowchart LR
-    SIM[Simulator: SUMO or built-in] -- queues, waits, emergency --> OBS[Observation builder<br/>spaces.py: 23 features]
-    OBS -- state s_i --> AG[DQN agent per intersection<br/>agents/double_dqn_agent.py]
-    AG -- target phase a_i --> FSM[Safety FSM<br/>phases.py: min/max green, yellow, all-red]
-    FSM -- safe green set --> SIM
-    SIM -- delay, pressure, clearances --> R[Reward r_i<br/>traffic_env._rewards]
-    R -- training: store & learn --> AG
-    NB[Neighbour pressures & phases] --> OBS
-    EM[Emergency detector] -- preempt --> FSM
+1. The simulator (`sim/`) moves vehicles for five seconds.
+2. `envs/spaces.py` builds one observation per junction.
+3. Each agent (`agents/`) outputs the phase it wants.
+4. The safety state machine (`envs/phases.py`) decides what the lamps actually do.
+5. While training, the reward (`envs/traffic_env.py`) tells the agents how that went.
+
+`config.yaml` is the only place numbers live. Every module reads it.
+
+---
+
+## 4. What an agent sees, does and is paid for
+
+### What it sees: 33 numbers (`envs/spaces.py`)
+
+| Values | What | Why |
+|---:|---|---|
+| 4 | queue length on each approach (N, E, S, W) | where the vehicles are |
+| 4 | accumulated waiting time on each approach | how long they have waited |
+| 2 | which phase is green now | what it is currently doing |
+| 1 | how long that green has lasted | how close it is to the limits |
+| 4 | emergency flag per approach: 1 if an emergency vehicle waits there, 0.5 if one is on its way there | lets it make way before the vehicle arrives |
+| 4 | each neighbour's pressure | what is about to be sent its way |
+| 4 | each neighbour's current phase | lets neighbours line their greens up |
+| 2 | the pressure of each of its own phases | exactly what the max-pressure rule compares |
+| 4 | arrival rate on each approach (last ≈30 s) | how fast the approach is filling |
+| 4 | arrival trend on each approach (30 s rate minus 120 s rate) | whether demand is building or easing |
+
+Everything is scaled to roughly 0–1. The last ten values can be switched off in
+`config.yaml` (`rl.pressure_obs`, `rl.demand_obs`); a model only works with the switches it
+was trained with, and loading it under different ones stops with a message that says so.
+
+### What it does: choose a phase (`envs/phases.py`)
+
+The action is "which phase should be green next": north–south or east–west. It is a
+*request*. The agent never writes to the lamps.
+
+### What it is paid for (`envs/traffic_env.py`, `_rewards`)
+
+After every decision each agent gets a number:
+
+```
+reward = − delay at my junction            (vehicle-seconds waited, scaled)
+         − pressure at my junction         (queues not yet served, scaled)
+         − 0.2 if I started a phase change (changing is not free)
+         + 10 for every emergency vehicle that got through my junction
+         − 6 for every emergency vehicle I kept waiting
 ```
 
-**Step by step (what happens each `env.step`):**
-1. Each agent reads its 23-value observation and outputs a **target phase**
-   (`MultiAgentDQN.act` → `DoubleDQNAgent.act`, `src/atsc/agents/*`).
-2. The env registers that request on the intersection's `SignalFSM.request(...)`
-   (`traffic_env.step`).
-3. The `EmergencyController` may override the request to serve an ambulance
-   (`src/atsc/control/emergency.py`).
-4. For 5 one-second ticks the env calls `SignalFSM.tick()`, which returns the *safe* set of
-   green approaches, pushes them to the backend, and steps the simulator one second
-   (`traffic_env._advance_one_second`).
-5. The env computes each agent's reward from the delay/pressure/switch/emergency terms
-   (`traffic_env._rewards`) and returns the next observations.
-6. **In training only**, the trainer stores `(state, action, reward, next_state, done)` in
-   replay and calls `learn()` (`src/atsc/train/trainer.py`).
+The weights are in `config.yaml → reward`. The agent is never told *how* to shorten waits;
+it finds out which requests lead to higher reward.
 
 ---
 
-## 4. TECHNOLOGY STACK
+## 5. How it learns
 
-Every dependency below is really pinned in `requirements.txt`.
+The method is a **Double + Dueling Deep Q-Network with prioritized replay**. In order:
 
-| Tool / library | Version (`requirements.txt`) | What it is | Role in THIS project | Why over alternatives |
-|---|---|---|---|---|
-| **Python** | 3.10+ | Language | Everything | Standard for ML; the whole stack is Python |
-| **PyTorch** | 2.2.2 | Deep-learning framework | Builds & trains the Dueling DQN when installed (`agents/net.py` `TorchQNet`) | Mature, autograd, matches the declared stack; vs TensorFlow it's more Pythonic and common in RL |
-| **NumPy** | 1.26.4 | Numerical arrays | The whole built-in simulator, PER buffer, *and* a from-scratch DQN fallback (`agents/net.py` `NumpyQNet`) | Universal; lets the system run with zero heavy deps |
-| **Gymnasium** | 0.29.1 | RL environment API | Provides the `spaces.Box`/`Discrete` objects that describe the observation and action spaces (`envs/spaces.py`) | The modern standard RL interface (successor to OpenAI Gym); keeps our env conventional |
-| **FastAPI** | 0.111.0 | Async web framework | Dashboard server + WebSocket streaming (`dashboard/server.py`) | Async + WebSocket out of the box, minimal boilerplate; vs Flask it has native async/WS |
-| **Uvicorn** | 0.30.1 (`[standard]`) | ASGI server | Runs the FastAPI app | The reference ASGI server for FastAPI |
-| **Pandas** | 2.1.4 | Dataframes | Aggregates benchmark results, writes CSV/markdown tables (`eval/benchmark.py`) | Best tool for tabular metric aggregation |
-| **Matplotlib** | 3.8.4 | Plotting | Comparison bar charts, training curve (`eval/plots.py`) | Standard, headless-capable (`Agg` backend) |
-| **PyYAML** | 6.0.1 | YAML parser | Loads `config.yaml` (`config.py`) | Human-readable config; one source of truth |
-| **pytest** | 8.2.0 | Test framework | Runs the 189 tests (`tests/`), locally and in GitHub Actions on every push | De-facto Python testing standard |
-| **SUMO + TraCI / libsumo** | (installed separately, optional) | Microscopic traffic simulator + its Python control API | Primary simulator backend (`sim/sumo_backend.py`, `sim/netgen.py`) | SUMO is the academic-standard traffic simulator; TraCI is its real-time control protocol |
+**Q-values.** `Q(s, a)` is an estimate of the total future reward if you take action `a` in
+situation `s` and act well afterwards. If you knew Q, the policy would be trivial: pick the
+action with the larger Q.
 
-Note: **WebSocket** is not a library we install — it is a browser/HTTP protocol; FastAPI
-provides the server side and the browser's built-in `WebSocket` API the client side
-(`dashboard/static/js/transport.js`). The **frontend uses no framework and no third-party JS
-at all** — plain HTML/CSS and JavaScript modules, with the network animation and all 18
-vehicle sprites drawn by hand on the HTML5 **Canvas** API (`js/renderer.js`, `js/sprites.js`)
-and the run-so-far chart drawn on a canvas too (`js/charts.js`). There is no CDN
-request anywhere, which is why the dashboard works with the network cable unplugged. The page
-is written for a non-technical audience: the two controllers appear as *RL Agent System* and
-*Traditional Traffic System*, the live result says which is ahead and by how much, and every
-emergency vehicle is followed on both maps — circled, labelled *Moving*, *Waiting* or *Not
-moving*, the light it waits at ringed, its route ahead dashed — and in a line above each map
-and a tracker under them, by a tracker (`js/tracker.js`) that reads where the simulator has
-it from the server (`ed`, `ev`, `evx` in `dashboard/session.py`). While one is on the road
-the race plays in slow motion, and it pauses for a moment on the result.
+**Deep Q-Network.** There are far too many situations to store Q in a table, so a small
+neural network estimates it: 33 inputs, two hidden layers of 128 units, 2 outputs — 21,251
+parameters (`agents/net.py`).
 
-**The dependency-optional design (a deliberate engineering choice).** Three subsystems each
-have a heavyweight "primary" and a zero-dependency "fallback", chosen automatically:
+**Learning from replay.** Every decision is stored as (situation, action, reward, next
+situation) in a buffer of 50,000. The network is trained on batches of 64 drawn from it,
+nudging `Q(s, a)` towards `reward + 0.99 × best Q of the next situation`
+(`agents/double_dqn_agent.py`).
 
-| Subsystem | Primary | Fallback | Selector |
-|---|---|---|---|
-| Neural network | PyTorch (`TorchQNet`) | from-scratch NumPy net (`NumpyQNet`) | `config.yaml → rl.nn_backend: auto` (`agents/net.py:create_qnet`) |
-| Simulator | SUMO via TraCI/libsumo (`SumoBackend`) | built-in point-queue sim (`MiniBackend`) | `config.yaml → backend: auto` (`sim/__init__.py:make_backend`) |
-| Dashboard server | FastAPI + WebSocket (`server.py`) | Python stdlib `http.server` + polling (`stdlib_server.py`) | auto-detected in `dashboard/server.py:run_dashboard` |
+**Double DQN.** Using one network both to pick and to score the best next action makes the
+estimates drift upwards. Double DQN lets the live network pick and a frozen copy (the
+**target network**, refreshed every 500 updates) score.
 
-**Why.** The system is meant to be demoed live by a hands-off operator on any machine
-(possibly a locked-down lab PC where PyTorch or SUMO won't install). Making each layer
-degrade gracefully means **"it just runs"** everywhere, and — crucially — the two NN
-backends share a **portable checkpoint format** (a dict of NumPy arrays, `agents/net.py`),
-so a model trained one way loads the other way unchanged.
+**Dueling head.** The network splits into "how good is this situation" and "how much better
+is each action than average", then recombines them. In traffic the situation often matters
+more than the choice, and this lets the network learn that directly.
+
+**Prioritized replay.** Transitions the network predicted badly are replayed more often,
+with a correction so that this does not bias the result (`agents/replay.py`).
+
+**Exploration.** At first the agent acts at random; the share of random actions falls from
+100 % to 5 % over 70,000 decisions (`agents/policies.py`).
+
+**Two interchangeable networks.** The same network exists in PyTorch and in plain NumPy with
+hand-written back-propagation. They share one checkpoint format, so a model trained with one
+runs on the other; the hosted site runs without PyTorch.
 
 ---
 
-## 5. THE RL FORMULATION (the heart of the viva)
+## 6. Training (`train/trainer.py`)
 
-### 5.1 STATE / observation — 23 numbers per agent
+`python run.py train --overwrite` runs 400 episodes of 20 simulated minutes, about eight
+minutes on one CPU core.
 
-Built in `src/atsc/envs/spaces.py` (`build_observation`), and the size is asserted by
-`obs_size(n_phases=2, neighbor_obs=True) = 4+4+2+1+4+4+4 = 23`. All features are scaled to
-roughly [0,1] (or [-1,1] for pressure).
+* **Curriculum.** Episodes cycle through light, medium, heavy, rush-hour and surge traffic, so
+  one policy handles all of them.
+* **Emergency vehicles are part of it.** On average every five minutes of an episode an
+  ambulance, police car or fire engine is sent in, with no rule helping it. Getting it
+  through is left to the agents and to the two emergency terms of the reward.
+* **The time limit is not an ending.** An episode stops because time is up, not because the
+  traffic ended, so the last step is learned from like any other.
+* **Keeping the best.** Every 10 episodes the policy is tested, without random actions, on
+  every scenario of the curriculum, and the best version so far is saved.
 
-| # | Feature | Count | What it is / units | Normaliser | Why included |
-|---|---|---|---|---|---|
-| 1 | Per-approach **queue length** (N,E,S,W) | 4 | halted vehicles on each approach (count) | ÷ `QUEUE_NORM=20` | The core "how much traffic is waiting where" signal |
-| 2 | Per-approach **cumulative waiting time** (N,E,S,W) | 4 | sum of seconds vehicles on that approach have waited | ÷ `WAIT_NORM=100` | Distinguishes "5 cars just arrived" from "5 cars stuck a long time" (fairness/starvation) |
-| 3 | **Current phase** one-hot | 2 | which phase is green now (NS=[1,0], EW=[0,1]) | — | The agent must know its own current state |
-| 4 | **Green-time-so-far** | 1 | seconds current green has run ÷ `max_green` | `time_since_change_frac()` | Lets it respect min/max green and time switches |
-| 5 | Per-approach **emergency flag** (N,E,S,W) | 4 | 1 if an emergency vehicle is present, else 0 | 0/1 | Meant to make the policy emergency-aware; training never sends an emergency vehicle, so the flags are always 0 in training and the shipped policy does not react to them (the preemption override does, §9) |
-| 6 | **Neighbour pressure** (N,E,S,W sides) | 4 | `tanh(neighbour_pressure / 40)`; 0 if no neighbour | `PRESSURE_NORM=40` | Coordination signal — see what's building up next door |
-| 7 | **Neighbour phase** (N,E,S,W sides) | 4 | neighbour's current phase index ÷ its `n_phases`; 0 if none | — | Lets agents align greens into a green wave |
+**Which model is shipped.** Training has randomness, and two runs of the same recipe do not
+give the same model. The recipe was therefore run five times (`models/seeds/`). The five
+models were compared on traffic none of them had seen and that the benchmark does not use
+(validation seeds 100–104), and the best one there is the shipped model.
+`python tools/model_study.py` reproduces that comparison and shows how far apart the five
+are.
 
-Features 6–7 (the 8 "coordination" features) are toggled by `config.yaml → rl.neighbor_obs:
-true`. **Neighbour pressure** uses the max-pressure quantity
-`incoming_queue − 0.5 × downstream_queue` (`sim/backend.py:intersection_pressure`).
+---
 
-### 5.2 ACTION space
+## 7. Four agents, one policy (`agents/multi_agent.py`)
 
-Each agent chooses a **discrete target green phase**: an integer in `{0, 1}` for the default
-2-phase scheme (`config.yaml → network.phase_scheme: ns_ew`), i.e. **Phase 0 = NS green
-(North+South)** or **Phase 1 = EW green (East+West)** (`sim/backend.py:_phase_set`). The
-action space object is `gymnasium.spaces.Discrete(n_phases)` (`traffic_env.py`).
+Each junction decides for itself. There is no central controller and no messages between
+agents: a junction simply *sees* its neighbours' pressure and phase among its inputs, which
+is enough for neighbouring junctions to line their greens up along the main road.
 
-**Crucial constraint:** the agent only *requests* a phase; it **cannot** set the lights
-directly. The `SignalFSM` (§8) decides whether/when the switch is legal and inserts the
-mandatory yellow + all-red. So the agent's action is a *wish*, not a command — safety is
-never in the agent's hands.
+All four agents share one network and one replay buffer. The junctions are alike, so what
+one learns applies to the others, and four junctions produce four times the experience for
+the same network. A fully joint controller would have to choose among every combination of
+phases across the grid, which grows exponentially with the number of junctions; independent
+agents with neighbour inputs scale to any grid.
 
-(The config also supports a 4-phase `quad` scheme for the 3×3 upgrade path, but the shipped
-2×2 model uses `ns_ew`.)
+A centralised-training variant (QMIX, `agents/qmix.py`) is implemented and switched off by
+default.
 
-### 5.3 REWARD function
+---
 
-Computed in `src/atsc/envs/traffic_env.py` (`_rewards`), per agent *i*, over each 5-second
-decision interval. The real code is:
+## 8. The safety layer (`envs/phases.py`)
 
-```python
-r  = -(w_wait     * delay)    / norm        # w_wait=1.0
-r -=  (w_pressure * pressure) / norm        # w_pressure=0.30
-r -=   w_switch   * switched                # w_switch=0.20
-r +=   w_emergency * cleared                # w_emergency=5.0
-# pressure = max(0.0, intersection_pressure(i)); norm = reward.normalize = 40.0
+Whatever the agents ask for, a small state machine owns the lamps:
+
+* a green lasts at least 10 s and at most 60 s;
+* every change goes green → 3 s amber → 2 s all-red → green;
+* a change that has begun always completes — a request made during the amber or all-red is
+  acted on from the next green;
+* so no direction waits more than 70 s for its green.
+
+During amber and all-red no approach has green, so two crossing directions can never be green
+together. This is a property of the machine, not something the agents learn, and
+`tests/test_phases_safety.py` checks it over 18,000 random requests, along with the exact
+durations.
+
+The point of the separation: the learned part may be imperfect or exploring; the safe part is
+simple enough to verify. Every controller in the project — the timer, max-pressure and the
+agents — drives the same machine and pays the same clearance times.
+
+---
+
+## 9. Emergency vehicles (`control/emergency.py`, `tools/emergency_eval.py`)
+
+Two mechanisms work together.
+
+**Learned.** Because emergency vehicles appear during training, the agents have learned to
+react to the emergency flags: on the main road they open the way for an ambulance by
+themselves.
+
+**Guaranteed.** On top of the policy sits a rule, as real preemption systems have. For the
+agents' grid it clears a *green corridor*: from the moment the vehicle is sent, every
+junction still ahead of it requests the phase that serves it. The fixed-time grid uses
+*stop-line* preemption: a junction switches once the vehicle is waiting at it, as a
+stand-alone signal would. Both go through the safety layer; amber and all-red are never
+skipped.
+
+`tools/emergency_eval.py` measures each vehicle type over 1,250 matched dispatches, with the
+rule and without it, so that what the agents learned and what the rule adds can be told
+apart. The short version: the agents alone handle the main road well, and the side street
+(where the police car drives) needs the rule. The numbers and the caveats are in
+REPORT.md §6.3 and §8.
+
+---
+
+## 10. How the comparison is made fair (`eval/benchmark.py`)
+
+* **Identical traffic.** The same scenario and seed produce the same vehicles at the same
+  seconds for every controller, so any difference is the controller's.
+* **Two baselines.** *Fixed-time* (`control/fixed_time.py`): 30 s per direction, a sensible
+  plan with the same clearances. *Max-pressure* (`control/max_pressure.py`): at every decision
+  it serves the phase whose queues exceed the queues downstream by the most.
+* **Ten seeds and intervals.** Each controller runs each of the five scenarios on ten seeds.
+  Controllers are compared seed by seed, and each difference is reported with a 95 %
+  confidence interval: if the interval includes zero, the difference is within the noise and
+  is called a tie.
+* **More than one model.** Five trained models, not one, so that "the method works" is not
+  confused with "this checkpoint was lucky".
+* **Reproducible.** `python run.py eval` regenerates every published number from the shipped
+  model, byte for byte; the automated checks on GitHub fail if a number changes.
+
+The five scenarios: light, medium, heavy and rush-hour traffic at a steady rate, and a
+**surge** in which demand rises from light to rush-hour level and falls back within one
+episode.
+
+---
+
+## 11. Two simulators (`sim/`)
+
+* **Built-in** (`sim/mini_backend.py`): a point-queue model. Vehicles arrive at random, wait
+  in a queue per approach, cross at up to one vehicle every two seconds on green and take the
+  free-flow time to reach the next junction. It is fast, has no dependencies, and every
+  headline number comes from it. It has no car-following, lane changing or spill-back.
+* **SUMO** (`sim/sumo_backend.py`): the standard open-source microscopic simulator, used when
+  installed. The same benchmark runs on it (`python run.py eval --backend sumo`), with the
+  model that was trained on the built-in simulator.
+
+Both sit behind one interface (`sim/backend.py`), so the environment, the controllers and
+the benchmark do not know which one is running.
+
+---
+
+## 12. The dashboard (`dashboard/`)
+
+One page shows the same four junctions twice, fed the same vehicles: the agents on the left,
+the timer on the right. A server process advances both simulations and sends the browser a
+compact update five times a second over a WebSocket (`session.py`, `server.py`); the browser
+draws the roads, vehicles and lamps on a canvas and reconstructs the motion between updates
+(`static/js/`). There is no framework and nothing is loaded from another site.
+
+An emergency vehicle sent from the page enters both grids and is followed on both: circled
+on the map, described in a line above each map, and compared in a tracker under them. Those
+facts come from the simulator, not from the picture, and tests check the page's account
+against the simulator frame by frame.
+
+If FastAPI is not installed, a standard-library server serves the same page by polling.
+
+---
+
+## 13. Built to run anywhere
+
+| Part | Preferred | Fallback when it is missing |
+|---|---|---|
+| Neural network | PyTorch | the NumPy network, same checkpoint |
+| Simulator | SUMO | the built-in simulator |
+| Web server | FastAPI + WebSocket | standard-library server, polling |
+
+Each is chosen automatically. `python run.py doctor` prints what was found and what was
+substituted.
+
+---
+
+## 14. Where things are
+
+```
+run.py                 one entry point: demo | train | eval | sim | doctor
+config.yaml            every setting
+src/atsc/
+  sim/                 backend.py (interface, topology, metrics) · mini_backend.py ·
+                       sumo_backend.py · netgen.py · sumo_detect.py
+  envs/                traffic_env.py (environment, reward) · phases.py (safety) ·
+                       spaces.py (observation)
+  agents/              net.py · double_dqn_agent.py · multi_agent.py · replay.py ·
+                       policies.py · qmix.py
+  control/             fixed_time.py · max_pressure.py · rl_controller.py · emergency.py
+  train/               trainer.py
+  eval/                benchmark.py · metrics.py · plots.py
+  dashboard/           session.py · server.py · stdlib_server.py · static/
+  vehicles.py          the vehicle types drawn on the page and the emergency types
+tools/                 emergency_eval.py · model_study.py · make_results_svg.py ·
+                       e2e_browser.py · bench_server.py · record_gif.py
+tests/                 the test suite
+models/                pretrained/ (shipped) · seeds/ · ablation/
+outputs/               every published CSV, table and plot
 ```
 
-Weights are all in `config.yaml → reward` (`w_wait: 1.0`, `w_pressure: 0.30`,
-`w_switch: 0.20`, `w_emergency: 5.0`, `normalize: 40.0`).
-
-| Term | Sign | Meaning | Intuition |
-|---|---|---|---|
-| `delay` | − | vehicle-seconds of delay accrued at *i* this interval (`backend.pop_delay`) | Punish making cars wait — the primary objective |
-| `pressure` | − | `max(0, incoming − 0.5·downstream)` queues | Punish letting queues build; nudges toward max-pressure-like behaviour |
-| `switched` | − | 1 if a phase change was *initiated* this interval | **Anti-flicker penalty**: switching wastes a yellow+all-red, so pointless flapping is discouraged |
-| `cleared` | + | number of emergency vehicles that cleared *i* | Large bonus (×5) for whisking an ambulance through |
-
-**How it produces good behaviour.** Because `delay` and `pressure` are negative, the agent
-maximises reward by *keeping queues short* — i.e. giving green to the busy direction. The
-**switch penalty** is the key to suppressing "flicker": without it, an agent could rapidly
-alternate NS/EW chasing tiny queue differences, burning a 3 s yellow + 2 s all-red each time
-and serving no one; the −0.20 per switch makes it only switch when the traffic gain is worth
-the lost time. The emergency bonus (+5, far larger than the per-step delay terms which are
-typically < 1 after ÷40) makes clearing an ambulance dominate the agent's incentives when
-one is present.
-
-### 5.4 EPISODE structure
-
-- **Timestep:** 1 s simulation resolution; **decision every 5 s** (`config.yaml → sim.step_length_s`, `signal.decision_interval_s`).
-- **Episode length:** **1800 s** for evaluation, **1200 s** while training (`sim.episode_seconds` / `train.episode_seconds`) — training episodes are shorter for speed. A 30 s warm-up is excluded from metrics (`sim.warmup_s`).
-- **Densities (traffic scenarios):** `low (0.35×)`, `medium (0.60×)`, `high (0.90×)`, `rush (1.00×, sustained)` — arrival-rate scales in `config.yaml → scenarios`. Demand is deliberately **asymmetric**: the East–West arterial gets `arterial_boost: 2.2×` more traffic (`config.yaml → demand`), so a fixed 50/50 split is provably wasteful and adaptivity is genuinely rewarded.
-- Training cycles the four densities as a **curriculum** (`train.curriculum: [low, medium, high, rush]`, `train/curriculum.py`).
-
 ---
 
-## 6. THE LEARNING ALGORITHM
+## 15. Glossary
 
-Default algo: `config.yaml → rl.algo: double_dueling_dqn`. Core classes:
-`DoubleDQNAgent` (`agents/double_dqn_agent.py`), the network `NumpyQNet`/`TorchQNet`
-(`agents/net.py`), replay `PrioritizedReplayBuffer` (`agents/replay.py`), exploration
-`EpsilonGreedy` (`agents/policies.py`).
-
-**Q-learning basics (intuition).** A **Q-value** `Q(s,a)` estimates "how much total future
-reward do I expect if I take action `a` in state `s`, then act well after that." If you know
-Q, the best policy is trivial: in each state pick the action with the highest Q. Q-learning
-learns Q from experience using the **Bellman update**: `Q(s,a) → r + γ·max_a' Q(s',a')`.
-
-**Deep Q-Network (DQN).** With a 23-dimensional continuous state we can't store Q in a
-table, so a **neural network** approximates `Q(s,·)`. Our net is an MLP with hidden layers
-`[128, 128]` and ReLU (`config.yaml → rl.hidden_sizes`; `agents/net.py`).
-
-- **γ (discount factor) = 0.99** (`rl.gamma`): future reward is worth almost as much as
-  immediate reward → the agent plans ahead (a green now that causes a jam in 30 s is
-  penalised).
-- **Optimizer = Adam, learning rate = 0.0005** (`rl.lr`; Adam implemented in both
-  `NumpyQNet._adam_step` and `TorchQNet`).
-- **Batch size = 64** (`rl.batch_size`), **replay buffer = 50,000** transitions
-  (`rl.buffer_size`), learning starts after **1,000** transitions (`rl.min_buffer`).
-- **Loss = Huber (smooth-L1)** with **gradient clipping at 10.0** (`rl.grad_clip`) — Huber is
-  less sensitive to outlier TD-errors than MSE, which stabilises CPU training.
-
-**Double DQN (why it fixes overestimation).** Plain DQN uses the *same* network to both
-choose and evaluate the next action (`max_a' Q(s',a')`), which systematically **over-estimates**
-Q (the max of noisy estimates is biased high). Double DQN uses the **online** network to
-*choose* the next action and the **target** network to *evaluate* it. In our code
-(`double_dqn_agent.py:learn`):
-
-```python
-next_actions = argmax(online.q(next_states))          # online SELECTS
-next_q       = target.q(next_states)[range, next_actions]  # target EVALUATES
-targets      = rewards + γ * (1 - dones) * next_q
-```
-
-Enabled by `rl.double: true`.
-
-**Dueling architecture (value vs advantage).** The network splits its head into a **state-value
-stream V(s)** ("how good is this situation overall?") and an **advantage stream A(s,a)**
-("how much better is each action than average?"), recombined as
-`Q(s,a) = V(s) + (A(s,a) − mean_a A(s,a))` (`agents/net.py`). Intuition: in many traffic
-states *all* actions are similar (the situation itself is what's good or bad); dueling lets
-the net learn the state's value without having to learn it separately for every action →
-faster, more stable learning. Enabled by `rl.dueling: true`.
-
-**Prioritized Experience Replay (PER).** Instead of learning from uniformly random past
-transitions, PER samples **surprising** ones (big TD-error) more often, because those carry
-more to learn from (`agents/replay.py`, sum-tree). Bias from non-uniform sampling is
-corrected with **importance-sampling weights**. Hyperparameters (`config.yaml → rl.per`):
-`alpha: 0.6` (how strongly to prioritise), `beta_start: 0.4 → beta_end: 1.0` over
-`beta_steps: 20000` (how strongly to correct the bias, annealed up), `eps: 1e-6`. Toggle:
-`rl.per.enabled: true`.
-
-**Target network.** A frozen copy of the Q-network used to compute the learning target, so
-the target doesn't chase a moving prediction (which would be unstable). It is **hard-synced
-to the online weights every 500 learner steps** (`rl.target_update_every: 500`;
-`double_dqn_agent.py:learn` → `target.copy_weights_from(online)`).
-
-**Epsilon-greedy exploration & decay.** With probability ε the agent acts randomly (to
-explore), otherwise greedily (best Q). ε **decays linearly from 1.0 to 0.05 over 22,000
-control-steps** (`rl.epsilon_start/epsilon_end/epsilon_decay_steps`;
-`agents/policies.py:EpsilonGreedy`). Early on it explores widely; by the end it mostly
-exploits its learned policy. One shared ε schedule is stepped once per learner update
-(`multi_agent.py:learn`).
-
----
-
-## 7. MULTI-AGENT DESIGN
-
-**Plain English.** Four intersections, four AI brains — but they aren't blind to each other.
-Each brain's inputs include what its neighbours are doing (their pressure and current phase),
-so a junction can, say, turn its arterial green just before a platoon arrives from the
-upstream junction. When several junctions on the arterial do this in sequence, cars sail
-through a chain of greens — a **green wave**.
-
-**Technical.** The grid is built by `build_topology` (`sim/backend.py`) from
-`config.yaml → network.grid_rows: 2, grid_cols: 2`, giving intersections `J0_0, J0_1, J1_0,
-J1_1`, each with N/E/S/W neighbour links. The environment is a **PettingZoo-style parallel
-multi-agent env** (`MultiAgentTrafficEnv`, `envs/traffic_env.py`) — `reset`/`step` return
-dicts keyed by intersection id. Coordination is achieved purely through the **neighbour
-observation features** (`spaces.py`, §5.1 items 6–7), not through a central controller.
-
-**Shared parameters (default).** By `config.yaml → rl.share_parameters: true`, all four
-agents use **one shared network** and pool their experience into one replay buffer
-(`multi_agent.py:MultiAgentDQN`). Because the intersections are **homogeneous** (identical
-observation layout and action set), this is standard **shared-parameter independent
-Q-learning**: 4× the data for one network → much faster, more stable learning on CPU. It is
-still conceptually "one policy per intersection" — they just share weights. Setting
-`share_parameters: false` gives each intersection its own network.
-
-**Why independent-DQN-with-neighbour-obs over full centralised/joint learning?** A fully
-joint learner would output the *combined* action of all four junctions; the joint action
-space grows as `n_phases^(n_intersections)` (here 2⁴ = 16, but 2⁹ = 512 for a 3×3), which
-explodes and doesn't scale. Independent agents with neighbour observations get most of the
-coordination benefit (they *see* each other) at a fraction of the complexity, and scale to
-any grid size. 
-
-**Config-gated CTDE upgrade.** A full **QMIX** (centralised-training / decentralised-execution)
-learner is implemented and available behind `config.yaml → qmix.enabled: false`
-(`agents/qmix.py`); it requires PyTorch. It's our documented "next step" for tighter
-coordination, kept off by default so the reliable path is the shipped one.
-
----
-
-## 8. SAFETY LAYER (the phase state machine)
-
-**Plain English.** No matter what the AI wants, a separate rule-book guarantees the lights
-are always physically safe: a green must last a minimum time, can't last forever, and every
-change goes green → **yellow** → **all-red** → green so two crossing directions are never
-green together. This is what makes the idea credible for a real road.
-
-**Technical (`src/atsc/envs/phases.py`, class `SignalFSM`).** A finite-state machine with
-three states — `GREEN`, `YELLOW`, `ALL_RED` — driven once per simulated second by `tick()`.
-Timing from `config.yaml → signal`:
-
-- **min_green_s = 10** — a green must hold ≥ 10 s before any switch.
-- **max_green_s = 60** — a green is forced to end after 60 s. (Not a full anti-starvation
-  guarantee: the FSM accepts a new request during amber and all-red, so a controller that
-  re-requests the same phase can cancel the change; side streets have waited up to ~113 s.)
-- **yellow_s = 3** — mandatory amber on every change.
-- **all_red_s = 2** — mandatory all-red clearance after amber.
-
-The agent calls `request(target_phase)`; the FSM only acts on it when legal. During `YELLOW`
-and `ALL_RED`, `active_green()` returns **no** green approaches, so the outgoing movement has
-fully stopped before the incoming one starts — **conflicting greens are impossible by
-construction**, not by learning.
-
-**Verification over 18,000 requests.** `tests/test_phases_safety.py` drives the FSM with a
-**random target every second for 6,000 steps × 3 seeds = 18,000 requests** and asserts:
-(a) every completed green lasts ≥ min_green and ≤ max_green
-(`test_min_and_max_green_respected`); (b) any switch between two different greens has ≥
-yellow+all-red seconds of clearance (`test_yellow_all_red_clearance_between_conflicting_greens`);
-(c) NS-green and EW-green never overlap on any tick
-(`test_no_conflicting_greens_simultaneously`); plus a dedicated
-`test_initial_green_holds_full_min_green`. **All pass.**
-
-**Why this matters.** It cleanly separates *optimisation* (the learned agent, which may be
-imperfect or exploratory) from *safety* (the FSM, which is provably correct). An examiner
-asking "what if the AI does something crazy?" gets a rigorous answer: it physically can't
-cause an unsafe signal.
-
----
-
-## 9. EMERGENCY-VEHICLE PREEMPTION
-
-**Plain English.** The moment an ambulance, police car or fire engine is sent, the RL system
-turns every light still ahead of it green in its direction — but still through the safe
-yellow/all-red sequence — so the queue in front of it has started to move before it gets
-there. The fixed-time system does what a stand-alone signal can: it changes a light once the
-vehicle is waiting at it. We measured how long each emergency vehicle takes to cross under
-both.
-
-**Technical (`src/atsc/control/emergency.py`, class `EmergencyController`).** Real preemption
-systems (e.g. Opticom) are **rule-based overrides**, and that's exactly what we implement —
-this is deterministic, not learned, which is the safe/credible choice. Each decision,
-`apply(env)` picks the junctions to pre-empt and calls `env.fsms[iid].request(phase.index)`
-for the phase whose `green_approaches` include the vehicle's approach — **overriding** the
-RL/baseline request for that junction. There are two modes. **Corridor** (the RL system,
-`config.yaml → emergency.corridor: [rl]`): `backend.emergency_routes()` lists every emergency
-vehicle with the junctions still ahead of it, and every one of those junctions is pre-empted
-until the vehicle has crossed it; where two vehicles want one junction, the closer one wins.
-**Stop line** (fixed-time and max-pressure): a junction is pre-empted while
-`backend.emergency_present(...)` is true, i.e. once the vehicle waits there. Safety is
-preserved because the request still goes through the `SignalFSM`, so the mandatory yellow +
-all-red are still inserted. Preemption is enabled by `config.yaml → emergency.preemption:
-true`. The reward does have a +5 bonus for clearing an emergency vehicle and the state has
-emergency flags, but training never sends one, so the learned policy itself does not react
-to them — everything an emergency vehicle gets comes from this override.
-
-**Measured clearance improvement (⚠ CORRECTION — real numbers).** Emergency clearance time =
-total seconds an emergency vehicle spends crossing the network from injection to exit. From
-`outputs/benchmark_results.csv` (shipped model): fixed-time vs RL is **26.0 → 18.7 s (1.4×)
-low, 28.7 → 16.3 s (1.8×) medium, 80.0 → 31.7 s (2.5×) high, 113.7 → 25.3 s (4.5×) rush**. So
-the honest headline is **"1.4× to 4.5× faster, and the gap grows with congestion (up to ~4.5×
-at rush)."** *(Do not claim 10× — that figure was from an earlier, more-gridlocked rush
-setting.)*
-
-**Every emergency type** (`python tools/emergency_eval.py`, `outputs/emergency/`): 1,000
-matched dispatches per type (4 densities × seeds 0–9 × 25 moments, each in its own copy of the
-running simulation). Average travel time fixed-time → RL: **ambulance 61.7 → 24.5 s (−60%),
-police car 22.9 → 20.9 s (−9%), fire engine 64.0 → 26.3 s (−59%)**, lower under RL at every
-density. Be ready for the follow-up on the police car: it is the only one on the side street,
-where the agents give less green than fixed-time's even split, so it often meets a red light
-and a longer queue at its first junction; the corridor wins it back at the second junction. At
-rush its lead is only 0.5 s, and with the same preemption on both grids it would be slower
-under RL (−12% with a corridor on both, −24% with stop-line preemption on both).
-
----
-
-## 10. BASELINES & FAIRNESS
-
-We compare RL against **two** baselines (`config.yaml → eval.controllers: [fixed_time,
-max_pressure, rl]`).
-
-**Fixed-time (`control/fixed_time.py`).** The conventional method: phase advances on a fixed
-schedule, `phase = (t // green_split) % n_phases`, with **green_split_s = 30** →
-NS 30 s / EW 30 s, a 60 s cycle (`config.yaml → fixed_time.green_split_s`). It is *not*
-crippled — it uses a sensible split and the same yellow/all-red as everyone else; its only
-weakness is that it can't adapt.
-
-**Max-pressure (`control/max_pressure.py`).** A strong, well-known **adaptive** baseline
-(Varaiya 2013): each intersection picks the phase maximising **pressure** = Σ over served
-approaches of `(upstream_queue − downstream_queue)`. It is provably throughput-optimal under
-idealised assumptions, so **beating (or matching) it is a meaningful result**, not just
-beating a dumb timer.
-
-**Why the comparison is scientifically honest.** All three controllers are evaluated on
-**byte-identical traffic**: the same scenario and the same random seed generate the *same*
-vehicles for each controller (`seeding.py:derive_seed`; `eval/benchmark.py` loops the same
-`seeds` list). Metrics ignore the 30 s warm-up. So any difference is attributable to the
-control policy alone, not to luck in the traffic.
-
----
-
-## 11. EVALUATION & RESULTS
-
-**Harness (`src/atsc/eval/benchmark.py`, run via `python run.py eval`).** For every
-(controller × scenario × seed) it runs one 1800 s episode and records: **average waiting
-time, average queue length, throughput (vehicles completed), average speed, fuel & CO₂
-proxies, and emergency clearance time** (`sim/backend.py:MetricsAccumulator`). Default eval
-uses **3 seeds `[0, 1, 2]`** and 4 scenarios (`config.yaml → eval`), always on the built-in
-simulator (`eval.backend: mini`; `--backend sumo` for a SUMO run into `outputs/sumo/`). It writes
-`outputs/benchmark_results.csv`, `benchmark_summary.md`, and the plots.
-
-**Headline results** (`outputs/benchmark_summary.md`, averaged over seeds 0–2; reproduce with
-`python run.py eval`):
-
-| Scenario | Avg wait — Fixed | Max-Pressure | **RL** | **RL vs Fixed** | Queue Fixed→RL | Emerg. clear Fixed→RL |
-|---|---:|---:|---:|---:|---:|---:|
-| Low | 26.3 s | 19.2 s | 22.0 s | **−16%** | 3.0 → 2.5 | 26.0 → 18.7 s (1.4×) |
-| Medium | 34.3 s | 22.5 s | 24.8 s | **−28%** | 6.8 → 4.9 | 28.7 → 16.3 s (1.8×) |
-| High | 68.7 s | 35.6 s | 35.6 s | **−48%** | 20.1 → 10.4 | 80.0 → 31.7 s (2.5×) |
-| Rush | 113.0 s | 50.5 s | 43.9 s | **−61%** | 36.5 → 14.2 | 113.7 → 25.3 s (4.5×) |
-| **Mean** | | | | **≈ −38%** | | |
-
-At **high** density RL also lifts throughput (2002 → 2057 veh) and average speed (2.6 → 4.3
-m/s) vs fixed-time (`benchmark_results.csv`).
-
-**Interpretation (be ready to explain each):**
-- **Why RL improves most at high/rush density:** that's where fixed-time wastes the most —
-  long queues on the arterial while the side street gets an equal, mostly-empty green. There
-  is a lot of slack to reclaim, so adaptivity pays off (−49% / −61%).
-- **Why low density shows little gain (−15%):** with few cars there's barely any queue to
-  optimise; even a dumb timer is nearly fine, so the absolute saving is small (a few
-  seconds). This is expected and honest, not a weakness.
-- **Why rush is the hardest case:** it's near **saturation** — demand approaches the
-  intersection's capacity, so queues are long for *everyone*; the controller can reorder who
-  waits but can't create capacity. RL still wins biggest here because smart ordering matters
-  most under load, and it even edges max-pressure.
-- **RL vs max-pressure:** RL is competitive — essentially tied at high, and it **beats**
-  max-pressure at rush — while max-pressure stays slightly better at low density (little to
-  optimise). Beating a near-optimal baseline anywhere is a strong result.
-
-**The one honest limitation (raise it before the examiner does).** The observation has **no
-explicit time-of-day / demand-trend feature** (§5.1). On a *sharply time-varying* surge the
-greedy policy can be whipsawed, so we model rush as **sustained** heavy demand
-(`scenarios.rush.time_varying: false`) rather than a spike. **Planned fix:** add a short-horizon
-arrival-rate estimate (or a recurrent/GRU state) so the policy anticipates surges — noted in
-`REPORT.md §9`. This is a scoping choice, and the fix is well-understood.
-
-Other honest caveats: results are on a **2×2** grid (3×3 supported via config but needs a
-retrain); the built-in simulator is a **point-queue** model (no lane-changing/spill-back) —
-SUMO is the higher-fidelity path.
-
----
-
-## 12. CODE MAP
-
-**Root files**
-- `run.py` — single entry point: subcommands `demo | train | eval | sim | doctor`.
-- `run.bat` / `run.sh` — one-click Windows / macOS-Linux launchers (make venv, install, demo).
-- `config.yaml` — **the single source of truth** for every setting.
-- `requirements.txt` / `environment.yml` — pinned dependencies (pip / conda).
-- `asgi.py` — the entrypoint a hosting platform starts (`uvicorn asgi:app`); `build_app()` is
-  a factory, so this is where the module-level `app` comes from. Not used locally.
-- `render.yaml` / `Dockerfile` / `.dockerignore` / `Procfile` / `requirements-deploy.txt` —
-  the deployment set; see `docs/DEPLOYMENT.md`.
-- `README.md` — quickstart, architecture, results, "how to explain in the viva" table.
-- `REPORT.md` — full methodology, RL math, results, limitations, references.
-- `EXPLAINER.md` / `CHEATSHEET.md` — this study pack.
-- `LICENSE` (MIT), `.gitignore`, `pytest.ini`. The slide deck (`*.pptx`) is kept out of git by
-  `.gitignore` — it is a submission artefact, handed in separately.
-
-**`src/atsc/` — the Python package (49 modules)**
-- `config.py` — loads/validates `config.yaml` into an attribute-accessible object.
-- `logging_utils.py` — logging + friendly boxed error messages.
-- `seeding.py` — deterministic seeds; `derive_seed()` gives identical traffic per (seed,scenario).
-- `sim/` — simulation layer:
-  - `backend.py` — topology, phase definitions (`_phase_set`), `intersection_pressure`, the `SimBackend` interface, `MetricsAccumulator`.
-  - `mini_backend.py` — the built-in NumPy point-queue simulator (fallback).
-  - `sumo_backend.py` — SUMO via libsumo/TraCI (primary).
-  - `sumo_detect.py` — finds SUMO / prints OS-specific install help.
-  - `netgen.py` — generates SUMO network + route files.
-- `envs/` — RL environment:
-  - `traffic_env.py` — `MultiAgentTrafficEnv` (reset/step, reward, render).
-  - `phases.py` — `SignalFSM` safety state machine.
-  - `spaces.py` — observation builder (the 23 features) + `obs_size`.
-- `agents/` — RL brains:
-  - `net.py` — `NumpyQNet` (from-scratch dueling net + Adam) and `TorchQNet`; `create_qnet` factory.
-  - `double_dqn_agent.py` — `DoubleDQNAgent` (Double DQN + PER + target sync).
-  - `multi_agent.py` — `MultiAgentDQN` (shared/independent, save/load).
-  - `replay.py` — `PrioritizedReplayBuffer` (sum-tree) + `UniformReplayBuffer`.
-  - `policies.py` — `EpsilonGreedy` schedule.
-  - `dqn.py` — PyTorch dueling `nn.Module`s (used by QMIX).
-  - `qmix.py` — optional CTDE learner (off by default).
-- `control/` — controllers with a common interface:
-  - `base.py`, `fixed_time.py`, `max_pressure.py`, `rl_controller.py`, `emergency.py`.
-- `train/` — `trainer.py` (curriculum loop, checkpointing), `curriculum.py`.
-- `eval/` — `benchmark.py`, `metrics.py`, `plots.py`.
-- `dashboard/` — `server.py` (FastAPI+WS), `stdlib_server.py` (fallback), `session.py` (RL-vs-fixed race + the compact wire protocol), `assets.py`/`runtime.py` (static files, build id, stats), `static/` (`index.html`, `styles.css`, `sw.js`, `js/{main, transport, model, renderer, sprites, charts, tracker, ui}.js`).
-- `vehicles.py` — the 18 vehicle types (Indian mix, drawn sizes), the configurable `traffic_mix`, and the emergency types (ambulance, police car, fire engine).
-- `threads.py` — pins the maths libraries to one thread on the hosted server (see `docs/DEPLOYMENT.md`).
-
-**Other folders**
-- `tests/` — 189 tests in 18 files: the core (`test_env.py`, `test_phases_safety.py`, `test_reward.py`, `test_replay.py`, `test_controllers.py`, `test_benchmark_math.py`, `test_agents_compat.py`), emergency preemption and its evaluation (`test_emergency_corridor.py`, `test_emergency_eval.py`), the dashboard (`test_dashboard_session.py`, `test_dashboard_ws.py`, `test_dashboard_model_js.py`, `test_stdlib_server.py`, `test_static_assets.py`, `test_threads.py`), the vehicles (`test_vehicles.py`) and emergency tracking (`test_emergency_tracking.py`, `test_tracker_js.py`); plus `conftest.py` and `dashboard_model.py` (a Python mirror of the browser's frame handling).
-- `models/pretrained/` — shipped checkpoint `atsc_2x2.pt` (+ `_final.pt`); portable NumPy-array pickle.
-- `outputs/` — generated CSVs + PNG plots + training logs.
-- `docs/screenshots/` — the dashboard stills and the animation in the README (the plots are shown straight from `outputs/`).
-- `tools/` — `e2e_browser.py` (headless-browser check), `bench_server.py` (server load), `record_gif.py` (the README animation).
-- `.github/workflows/ci.yml` — GitHub Actions: the full test suite, the benchmark reproduced byte for byte, and the hosted stack booted, on every push.
-- `scenarios/generated/` — auto-generated SUMO net/route files (created on demand; git-ignored).
-
----
-
-## 13. GLOSSARY
-
-- **Agent** — the decision-maker at one intersection (a neural network + policy).
-- **Environment** — the simulated world the agent acts in (`MultiAgentTrafficEnv`).
-- **State / observation** — the 23 numbers the agent sees each decision.
-- **Action** — the agent's choice: which phase to make green next.
-- **Policy** — the rule mapping state → action (here, "pick the highest-Q action").
-- **Reward** — the score signal (−delay −pressure −switch +emergency) the agent maximises.
-- **Q-value `Q(s,a)`** — expected total future reward of taking action `a` in state `s`.
-- **DQN (Deep Q-Network)** — a neural network that approximates Q-values.
-- **Double DQN** — uses one network to *choose* and another to *evaluate* the next action, to stop Q from being over-estimated.
-- **Dueling network** — splits Q into a state-value V(s) and an advantage A(s,a) for faster learning.
-- **PER (Prioritized Experience Replay)** — replay that samples surprising (high-error) transitions more often.
-- **Target network** — a slowly-updated copy of the Q-network used to compute stable learning targets.
-- **Epsilon-greedy** — explore randomly with probability ε, otherwise act greedily; ε decays over training.
-- **Discount factor (γ)** — how much future reward counts vs immediate (0.99 = plans far ahead).
-- **Replay buffer** — memory of past `(state, action, reward, next state)` transitions to learn from.
-- **Huber loss** — a robust regression loss (quadratic near 0, linear far out).
-- **FSM (finite-state machine)** — the GREEN/YELLOW/ALL_RED safety controller.
-- **Phase** — a set of movements that get green together (NS or EW here).
-- **Pressure / max-pressure** — `incoming queue − downstream queue`; a control rule that serves the highest-pressure phase.
-- **Green wave** — consecutive intersections turning green in sequence so a platoon flows without stopping.
-- **Saturation** — demand near the intersection's capacity; queues grow for everyone.
+- **Agent** — the decision-maker at one junction: a neural network plus the rule "pick the
+  action with the higher Q".
+- **Environment** — the simulated world the agents act in (`MultiAgentTrafficEnv`).
+- **Observation / state** — the 33 numbers an agent sees at each decision.
+- **Action** — the phase the agent asks for.
+- **Policy** — the rule from observation to action.
+- **Reward** — the score the agent tries to maximise over time.
+- **Q-value** — expected total future reward of an action in a situation.
+- **DQN** — a neural network that estimates Q-values.
+- **Double DQN** — one network chooses the next action, another scores it, to avoid
+  over-estimating.
+- **Dueling network** — estimates the value of the situation and the advantage of each action
+  separately.
+- **Prioritized replay** — learning more often from the experiences that were predicted
+  worst.
+- **Target network** — a periodically refreshed copy of the network that provides stable
+  learning targets.
+- **Epsilon-greedy** — act at random with probability ε, otherwise greedily; ε shrinks during
+  training.
+- **Discount factor (γ)** — how much future reward counts against immediate reward (0.99
+  here).
+- **Phase** — the movements that have green together (north–south or east–west here).
+- **Pressure** — the queue on an approach minus the queue it feeds downstream.
+- **Max-pressure** — the rule that serves the phase with the highest pressure.
+- **Preemption** — overriding the normal controller for an emergency vehicle.
+- **Green corridor** — preempting every junction ahead of an emergency vehicle at once.
+- **Saturation** — demand close to what a junction can discharge; queues then grow without
+  limit.
+- **Seed** — the number that fixes the random traffic, so a run can be repeated exactly.
+- **Confidence interval** — the range in which the true average difference plausibly lies;
+  if it includes zero, the difference is not established.
+- **Ablation** — retraining with one ingredient removed to see what it contributed.
+- **Point-queue model** — a traffic model that tracks a queue per approach instead of
+  individual vehicle movements.
 - **SUMO** — Simulation of Urban MObility, the standard microscopic traffic simulator.
-- **TraCI** — Traffic Control Interface, SUMO's real-time Python control protocol.
-- **Multi-agent / MARL** — many learning agents acting in one shared environment.
-- **CTDE / QMIX** — Centralised-Training/Decentralised-Execution; QMIX is a specific cooperative-MARL algorithm (our optional upgrade).
-- **Warm-up** — initial seconds excluded from metrics so measurements start from a realistic state.
-- **Point-queue model** — a simplified traffic model tracking queues per link (our fallback sim).
-
----
-
-## 14. ANTICIPATED PANEL QUESTIONS (with model answers)
-
-1. **Why RL instead of a smart timer or sensor-actuated control?**
-   A smart timer/loop detector is *reactive and local* — it extends green while it sees cars
-   but has no model of downstream consequences, neighbour coordination, or long-term reward,
-   and can't form green waves. RL optimises the whole sequence of outcomes (γ=0.99) and
-   coordinates through neighbour observations. In our tests RL cuts waiting by up to 61% vs a
-   fixed timer on identical traffic.
-
-2. **State, action, reward — exactly?**
-   State = 23 numbers per agent: per-approach queue (4) and waiting time (4), current-phase
-   one-hot (2), green-time-so-far (1), emergency flags (4), neighbour pressures (4), neighbour
-   phases (4) — `spaces.py`. Action = choose next green phase, `{NS, EW}` — `Discrete(2)`.
-   Reward = `−1.0·delay/40 − 0.30·pressure/40 − 0.20·switched + 5.0·emergency_cleared` —
-   `traffic_env._rewards`, weights in `config.yaml → reward`.
-
-3. **How do you *guarantee* safety?**
-   Safety is not learned — it's enforced by the `SignalFSM` (`phases.py`). The agent only
-   *requests* a phase; the FSM enforces min-green 10 s, max-green 60 s, and inserts a
-   mandatory 3 s yellow + 2 s all-red on every change, during which no direction is green.
-   Conflicting greens are impossible by construction, and we verified this over 18,000 random
-   requests in `test_phases_safety.py`.
-
-4. **Why DQN and not PPO / actor-critic?**
-   Our action space is small and **discrete** (choose one of 2 phases), which is exactly
-   DQN's sweet spot — it's sample-efficient and simple to make stable on CPU. PPO/actor-critic
-   shine for continuous or very large action spaces (not our case) and are typically less
-   sample-efficient. We took the strongest *discrete* value-based path: **Double + Dueling DQN
-   + PER**.
-
-5. **In what sense is this multi-agent?**
-   One agent (policy) per intersection, four on the 2×2 grid, each making its own decision
-   from its own observation (`MultiAgentTrafficEnv`). They coordinate via neighbour features
-   in the state, not a central controller. By default they **share network weights**
-   (homogeneous agents) for sample efficiency — still one policy per junction.
-
-6. **Are your baselines fair?**
-   Yes. Fixed-time uses a standard 30/30 s split (not sabotaged), and we *also* compare
-   against **max-pressure**, a near-optimal adaptive controller. All three run on
-   **byte-identical traffic** (same seed → same vehicles) with the same warm-up and safety
-   timing.
-
-7. **Why does rush hour barely improve? — (trap: it actually improves the MOST)**
-   Correction: rush shows our **largest** gain (−61%), because that's where fixed-time wastes
-   the most. If they mean *low* density (−15%): with few cars there's little queue to optimise,
-   so even a timer is nearly optimal and the absolute saving is tiny — expected, not a flaw.
-
-8. **What are the limitations?**
-   (i) No temporal/demand-trend feature → sensitivity to sharp within-episode surges, so we
-   model rush as sustained demand; fix = add an arrival-rate/GRU feature. (ii) 2×2 grid
-   (3×3 needs a retrain). (iii) The built-in sim is a point-queue model; SUMO is the
-   high-fidelity path. All are in `REPORT.md §8`.
-
-9. **Is it deployable in the real world?**
-   The *control logic* is deployment-shaped: rule-based safety override, emergency preemption
-   like real Opticom systems, and it runs on the academic-standard SUMO. Real deployment would
-   need real detector data (cameras/loops) feeding the state and hardware-in-the-loop testing.
-   The safety FSM is exactly the kind of guarantee a traffic authority requires.
-
-10. **What is your novelty vs existing papers?**
-    Most student/DRL works do a *single* intersection, one scenario, and no safety or
-    emergency handling. We combine, in one runnable system: **multi-agent neighbour-aware**
-    coordination (green waves), **provable safety FSM**, **emergency preemption**, **multi-density
-    evaluation against TWO baselines on identical seeds**, and a **dependency-optional**
-    engineering design with a live dashboard. It's the *integration + rigor + reproducibility*,
-    not a new RL algorithm.
-
-11. **Why Double DQN specifically?**
-    Standard DQN over-estimates Q because it takes a max over noisy estimates. Double DQN
-    decouples action *selection* (online net) from *evaluation* (target net), removing that
-    bias → more accurate values and steadier learning (`double_dqn_agent.py:learn`).
-
-12. **What does the Dueling architecture buy you?**
-    It learns "how good is this state" (V) separately from "how much better is each action"
-    (A). In traffic, many states have similar action values, so learning V once is far more
-    efficient than learning Q for each action independently.
-
-13. **What is Prioritized Experience Replay and why use it?**
-    It replays high-error ("surprising") transitions more often, so the agent learns fastest
-    from its biggest mistakes, with importance-sampling weights to stay unbiased
-    (`replay.py`, `alpha=0.6`, `beta 0.4→1.0`).
-
-14. **How do agents coordinate into a green wave?**
-    Each agent's state includes neighbour **pressure** and neighbour **phase** (`spaces.py`).
-    A junction can pre-empt its arterial green to receive an incoming platoon; when several do
-    this in sequence, cars cross multiple greens without stopping. On the dashboard you can
-    watch the four junctions' phases side by side.
-
-15. **What's the reward's role in preventing rapid light flicker?**
-    The `−0.20·switched` term penalises *initiating* a phase change. Since each change costs a
-    3 s yellow + 2 s all-red (lost throughput), the agent only switches when the traffic gain
-    outweighs the penalty — no pointless flapping.
-
-16. **Why γ = 0.99?**
-    So the agent values future consequences almost as much as immediate ones — it will accept
-    a slightly worse now for a much better later (e.g. not causing a downstream jam).
-
-17. **How do you know the model actually learned (not memorised)?**
-    It's evaluated **greedily (ε off)** on **held-out random seeds** it never trained on, across
-    four densities, and still beats both baselines — `eval/benchmark.py`. Training also cycles a
-    curriculum of all densities.
-
-18. **What if PyTorch or SUMO isn't installed on the exam PC?**
-    It still runs: the NN falls back to a from-scratch **NumPy** implementation and the
-    simulator to a built-in **point-queue** sim, both auto-selected (`create_qnet`,
-    `make_backend`). The dashboard falls back to a stdlib server. Checkpoints are portable
-    across NN backends.
-
-19. **How large is the network / how long does training take?**
-    An MLP with hidden layers `[128,128]` (`config.yaml`), tiny by ML standards. Full training
-    is 112 episodes (`train.episodes`), about two minutes on a CPU (the logged run spent 33.4 s
-    inside its episodes); `--quick` is 8 episodes, under a minute.
-
-20. **How is the emergency vehicle detected and handled, safely?**
-    The backend reports each emergency vehicle with the junctions still ahead of it
-    (`emergency_routes()`); on the RL grid `EmergencyController.apply` forces the phase serving
-    the vehicle at every one of them (a green corridor), on the fixed-time grid only at the one
-    it waits at (`emergency_present`), via `fsm.request`, overriding the normal controller — but
-    still through the FSM, so yellow/all-red are preserved. Measured clearance is 1.4× (low) to
-    4.5× (rush) faster than fixed-time, and every emergency type is faster on average.
-
-21. **Why a 2×2 grid and not one junction or a whole city?**
-    One junction can't show coordination/green waves — the core novelty. 2×2 is the smallest
-    grid where every intersection has neighbours on two sides, so it demonstrates coordination
-    while training instantly for a reliable live demo. 3×3 is a config change + retrain.
-
-22. **What would you do with more time / compute?**
-    Add the temporal demand feature (fix the one limitation), turn on **QMIX** for tighter
-    coordination, scale to 3×3/real OSM maps of a Bengaluru junction, and add a camera/YOLO
-    vehicle-count front-end to feed real detector data — all noted in `REPORT.md §9`.
-
----
-
-## 15. SOLO PRESENTATION FLOW
-
-Four blocks, delivered in this order. Each block ends with a bridge sentence so the talk
-never stalls, and each maps onto the §14 questions you should expect right after it.
-
-**Block 1 — Framing & Architecture (Sections 1–4). ~3 min.**
-The problem, why RL rather than tuned fixed-time, the big-picture control loop, and the
-dependency-optional tech stack. Start the live dashboard here and leave it running.
-*Bridge:* "That's the loop from the outside. Now let me open the black box — how one agent
-actually decides."
-
-**Block 2 — RL Formulation & Learning (Sections 5–6). ~4 min.**
-State, action and reward, then the algorithm: Double + Dueling DQN, PER, target network,
-epsilon-greedy, and the exact hyperparameters from `config.yaml`.
-*Bridge:* "That's one brain. Four of them share it — here's how they coordinate, and how the
-system stays safe no matter what they ask for."
-
-**Block 3 — Multi-Agent, Safety & Emergency (Sections 7–9). ~4 min.**
-The 2×2 coordination and green wave, the safety FSM including the 18,000-request proof, and
-emergency preemption. This is the block where a live ambulance injection lands best.
-*Bridge:* "So it is coordinated and it is safe. The remaining question is whether it is
-actually *better* — that is measured, not claimed."
-
-**Block 4 — Baselines, Results & Limitations (Sections 10–11). ~4 min.**
-Both baselines, the fairness argument (identical seeds), the results table and how to read
-it, and the one honest limitation raised proactively with its planned fix.
-*Close:* "…which is why the contribution is the integration: coordinated, safe,
-emergency-aware, and rigorously benchmarked."
-
-If time is cut short, drop Block 1 to one sentence and keep Blocks 2–4 — §14 Q2
-(state/action/reward), Q3 (safety) and Q10 (novelty) all live there.
-
----
-
-*Read the code alongside this document — every claim above cites the file it lives in.*
+- **MARL** — multi-agent reinforcement learning.

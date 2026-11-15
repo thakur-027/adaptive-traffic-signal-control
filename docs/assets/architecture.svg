@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 430" width="1200" height="430"
-     role="img" aria-label="How the pieces fit: config.yaml feeds the simulator, the simulator builds a 23-number observation per junction, four shared-weight DQN agents request a phase, the safety FSM gates it, and the lamp state advances the simulator again. Three entry points: train, eval, demo.">
+     role="img" aria-label="How the pieces fit: config.yaml feeds the simulator, the simulator builds a 33-number observation per junction, four shared-weight DQN agents request a phase, the safety FSM gates it, and the lamp state advances the simulator again. Three entry points: train, eval, demo.">
   <title>Adaptive Traffic Signal Control architecture: config to lamps, and back</title>
   <defs>
     <linearGradient id="abg" x1="0" y1="0" x2="1" y2="1">
@@ -51,7 +51,7 @@
   <text x="54" y="150" font-size="10" fill="#9fb0d0" textLength="106" lengthAdjust="spacing">one decision every 5 s</text>
   <text x="54" y="172" font-size="10" fill="#9fb0d0" textLength="123" lengthAdjust="spacing">green 10-60 s · amber 3 s</text>
   <text x="54" y="194" font-size="10" fill="#9fb0d0" textLength="103" lengthAdjust="spacing">all-red 2 s · step 1.0 s</text>
-  <text x="54" y="216" font-size="10" fill="#9fb0d0" textLength="102" lengthAdjust="spacing">4 scenarios · seed 42</text>
+  <text x="54" y="216" font-size="10" fill="#9fb0d0" textLength="102" lengthAdjust="spacing">5 scenarios · seed 45</text>
   <rect x="258" y="40" width="4" height="14" rx="2" fill="#5eead4"/>
   <text x="272" y="52" font-size="11.5" font-weight="700" fill="#93a3c4" textLength="76" lengthAdjust="spacing">SIMULATION</text>
   <rect x="258" y="68" width="212" height="168" rx="14" fill="#0e1a30" stroke="#2c3d5f"/>
@@ -67,15 +67,15 @@
   <rect x="506" y="40" width="4" height="14" rx="2" fill="#38bdf8"/>
   <text x="520" y="52" font-size="11.5" font-weight="700" fill="#93a3c4" textLength="88" lengthAdjust="spacing">OBSERVATION</text>
   <rect x="506" y="68" width="154" height="168" rx="14" fill="#0e1a30" stroke="#2c3d5f"/>
-  <text x="518" y="106" font-size="27" font-weight="700" fill="#38bdf8" textLength="32" lengthAdjust="spacing">23</text>
+  <text x="518" y="106" font-size="27" font-weight="700" fill="#38bdf8" textLength="32" lengthAdjust="spacing">33</text>
   <text x="558" y="98" font-size="9" fill="#7f90b3" textLength="54" lengthAdjust="spacing">numbers per</text>
   <text x="558" y="110" font-size="9" fill="#7f90b3" textLength="68" lengthAdjust="spacing">junction, per 5 s</text>
   <rect x="518" y="118" width="130" height="22" rx="7" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.1"/>
-  <text x="526" y="133" font-size="10.5" font-weight="700" fill="#38bdf8" textLength="6" lengthAdjust="spacing">8</text>
-  <text x="544" y="133" font-size="9.5" fill="#9fb0d0" textLength="68" lengthAdjust="spacing">queues + waits</text>
+  <text x="526" y="133" font-size="10.5" font-weight="700" fill="#38bdf8" text-anchor="middle" dx="3">16</text>
+  <text x="544" y="133" font-size="9.5" fill="#9fb0d0">queues, waits, demand</text>
   <rect x="518" y="144" width="130" height="22" rx="7" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.1"/>
-  <text x="526" y="159" font-size="10.5" font-weight="700" fill="#5eead4" textLength="6" lengthAdjust="spacing">3</text>
-  <text x="544" y="159" font-size="9.5" fill="#9fb0d0" textLength="62" lengthAdjust="spacing">phase + timer</text>
+  <text x="526" y="159" font-size="10.5" font-weight="700" fill="#5eead4" textLength="6" lengthAdjust="spacing">5</text>
+  <text x="544" y="159" font-size="9.5" fill="#9fb0d0">phase, timer, pressure</text>
   <rect x="518" y="170" width="130" height="22" rx="7" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.1"/>
   <text x="526" y="185" font-size="10.5" font-weight="700" fill="#f87171" textLength="6" lengthAdjust="spacing">4</text>
   <text x="544" y="185" font-size="9.5" fill="#9fb0d0" textLength="75" lengthAdjust="spacing">emergency flags</text>
@@ -91,18 +91,18 @@
   </g>
   <rect x="708" y="92" width="100" height="44" rx="10" fill="#0e1a30" stroke="#34d399" stroke-opacity="0.4"/>
   <text x="720" y="111" font-size="10.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-weight="700" fill="#f1f5fd" textLength="25" lengthAdjust="spacing">J0_0</text>
-  <text x="720" y="126" font-size="9" fill="#7f90b3" textLength="51" lengthAdjust="spacing">23 in · 2 out</text>
+  <text x="720" y="126" font-size="9" fill="#7f90b3">33 in · 2 out</text>
   <rect x="820" y="92" width="100" height="44" rx="10" fill="#0e1a30" stroke="#34d399" stroke-opacity="0.4"/>
   <text x="832" y="111" font-size="10.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-weight="700" fill="#f1f5fd" textLength="25" lengthAdjust="spacing">J0_1</text>
-  <text x="832" y="126" font-size="9" fill="#7f90b3" textLength="51" lengthAdjust="spacing">23 in · 2 out</text>
+  <text x="832" y="126" font-size="9" fill="#7f90b3">33 in · 2 out</text>
   <rect x="708" y="144" width="100" height="44" rx="10" fill="#0e1a30" stroke="#34d399" stroke-opacity="0.4"/>
   <text x="720" y="163" font-size="10.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-weight="700" fill="#f1f5fd" textLength="25" lengthAdjust="spacing">J1_0</text>
-  <text x="720" y="178" font-size="9" fill="#7f90b3" textLength="51" lengthAdjust="spacing">23 in · 2 out</text>
+  <text x="720" y="178" font-size="9" fill="#7f90b3">33 in · 2 out</text>
   <rect x="820" y="144" width="100" height="44" rx="10" fill="#0e1a30" stroke="#34d399" stroke-opacity="0.4"/>
   <text x="832" y="163" font-size="10.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-weight="700" fill="#f1f5fd" textLength="25" lengthAdjust="spacing">J1_1</text>
-  <text x="832" y="178" font-size="9" fill="#7f90b3" textLength="51" lengthAdjust="spacing">23 in · 2 out</text>
+  <text x="832" y="178" font-size="9" fill="#7f90b3">33 in · 2 out</text>
   <text x="708" y="206" font-size="9.5" fill="#9fb0d0" textLength="157" lengthAdjust="spacing">one shared Double + Dueling DQN</text>
-  <text x="708" y="220" font-size="9.5" fill="#7f90b3" textLength="153" lengthAdjust="spacing">hidden [128,128] · 19,971 params</text>
+  <text x="708" y="220" font-size="9.5" fill="#7f90b3">hidden [128,128] · 21,251 params</text>
   <rect x="968" y="40" width="4" height="14" rx="2" fill="#f59e0b"/>
   <text x="982" y="52" font-size="11.5" font-weight="700" fill="#93a3c4" textLength="133" lengthAdjust="spacing">SAFETY + ACTUATION</text>
   <rect x="968" y="68" width="192" height="168" rx="14" fill="#0e1a30" stroke="#2c3d5f"/>
@@ -126,12 +126,12 @@
   <rect x="40" y="316" width="353" height="66" rx="12" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.1"/>
   <rect x="40" y="316" width="4" height="66" rx="2" fill="#38bdf8" fill-opacity="0.85"/>
   <text x="58" y="341" font-size="11.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-weight="700" fill="#38bdf8" textLength="131" lengthAdjust="spacing">python run.py train</text>
-  <text x="58" y="361" font-size="9.5" fill="#9fb0d0" textLength="225" lengthAdjust="spacing">112 episodes · curriculum low, medium, high, rush</text>
+  <text x="58" y="361" font-size="9.5" fill="#9fb0d0">400 episodes · low to surge · with emergency vehicles</text>
   <text x="58" y="375" font-size="9.5" fill="#7f90b3" textLength="273" lengthAdjust="spacing">writes models/pretrained/atsc_2x2.pt + outputs/logs/train.csv</text>
   <rect x="423" y="316" width="353" height="66" rx="12" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.1"/>
   <rect x="423" y="316" width="4" height="66" rx="2" fill="#34d399" fill-opacity="0.85"/>
   <text x="441" y="341" font-size="11.5" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, Liberation Mono, monospace" font-weight="700" fill="#34d399" textLength="124" lengthAdjust="spacing">python run.py eval</text>
-  <text x="441" y="361" font-size="9.5" fill="#9fb0d0" textLength="212" lengthAdjust="spacing">3 controllers × 4 scenarios × 3 seeds = 36 runs</text>
+  <text x="441" y="361" font-size="9.5" fill="#9fb0d0">3 controllers × 5 scenarios × 10 seeds = 150 runs</text>
   <text x="441" y="375" font-size="9.5" fill="#7f90b3" textLength="224" lengthAdjust="spacing">writes outputs/benchmark_*.csv and the KPI plots</text>
   <rect x="806" y="316" width="354" height="66" rx="12" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.1"/>
   <rect x="806" y="316" width="4" height="66" rx="2" fill="#fbbf24" fill-opacity="0.85"/>

@@ -29,7 +29,8 @@ Checks, each reported PASS / FAIL:
   * every vehicle type of the catalogue is drawn at least once (needs a few minutes of
     simulated traffic; locally the run switches to rush hour at 8x to get there quickly)
   * playback controls (pause / step / play / speed / traffic level) take effect, the
-    technical details dialog opens
+    technical details dialog opens; the five traffic levels are offered in order (Light,
+    Normal, Heavy, Rush hour, Surge) and Surge restarts the race on its scenario
   * frames per second while animating, with and without an emergency vehicle tracked
   * --local only: the "Waking up the server..." screen. The page is loaded once (the service
     worker caches it), the server is replaced by one that accepts connections and never
@@ -507,6 +508,20 @@ def run(url: str, args, rep: Report, out: Path, server: Optional[LocalServer] = 
                                   len(speeds) - 1)
             rep.check("Speed slider reaches the server", wait_for(page, f"() => window.__ATSC__.model.g.sp === {speeds[-1]}", 8),
                       f"{g('sp')}x")
+            levels = page.evaluate("""() => [...document.querySelectorAll('#trafficSeg button')].map(
+                (b) => [b.dataset.scenario, b.textContent])""")
+            rep.check("the five traffic levels, Surge after Rush hour",
+                      levels == [["low", "Light"], ["medium", "Normal"], ["high", "Heavy"],
+                                 ["rush", "Rush hour"], ["surge", "Surge"]], str(levels))
+            ep0 = page.evaluate("() => window.__ATSC__.model.ep")
+            page.click("#trafficSeg button[data-scenario='surge']")
+            rep.check("Surge restarts the run on the surge scenario", wait_for(page, f"""() => {{
+                const M = window.__ATSC__.model; return M.g.sc === 'surge' && M.ep !== {json.dumps(ep0)}; }}""", 8),
+                      f"scenario {g('sc')}")
+            rep.check("Surge is the selected level and the result card says so", wait_for(page, """() =>
+                document.querySelector("#trafficSeg button[data-scenario='surge']").getAttribute('aria-checked') === 'true' &&
+                document.querySelectorAll("#trafficSeg button[aria-checked='true']").length === 1 &&
+                document.getElementById('trafficPill').textContent === 'Surge traffic'""", 5))
             page.click("#trafficSeg button[data-scenario='rush']")
             rep.check("Traffic level restarts the run", wait_for(page, "() => window.__ATSC__.model.g.sc === 'rush'", 8))
             rep.check("the traffic buttons show the new level", wait_for(page, """() =>

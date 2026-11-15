@@ -2,13 +2,17 @@
 #
 #   tests         the full pytest suite with every optional tool installed (Node for the
 #                 browser-model and tracker tests), so nothing is skipped;
-#                 then the 36-run benchmark is rerun from the shipped checkpoint - once with
+#                 then the 150-run benchmark is rerun from the shipped checkpoint - once with
 #                 PyTorch and once with the NumPy network the hosted site uses - and must
-#                 reproduce outputs/benchmark_*.csv and the summary byte for byte; and the
+#                 reproduce outputs/benchmark_*.csv and the summary byte for byte; the
 #                 emergency-vehicle evaluation must reproduce outputs/emergency/ (its CSVs and
-#                 results table) and pass: every emergency type faster under RL.
+#                 results table) and pass: every emergency type faster under RL; and the
+#                 model study must reproduce outputs/study/ from the shipped study models.
 #   hosted-stack  installs requirements-deploy.txt (no torch) on render.yaml's Python, starts
 #                 render.yaml's exact start command and checks /healthz and the WebSocket.
+#
+# The SUMO benchmark in outputs/sumo/ is not rerun here: it needs a SUMO installation, and
+# it is not the source of any headline number.
 #
 # Nothing here deploys: Render redeploys by itself on every push to main (render.yaml).
 
@@ -30,7 +34,7 @@ jobs:
   tests:
     name: Tests and benchmark reproduction
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -74,7 +78,12 @@ jobs:
       - name: Reproduce the emergency-vehicle evaluation (every type must pass)
         run: |
           python tools/emergency_eval.py
-          git diff --exit-code -- outputs/emergency/emergency_dispatches.csv outputs/emergency/emergency_summary.csv outputs/emergency/emergency_comparison.csv outputs/emergency/emergency_results.md
+          git diff --exit-code -- outputs/emergency/emergency_dispatches.csv outputs/emergency/emergency_summary.csv outputs/emergency/emergency_comparison.csv outputs/emergency/emergency_agents_alone.csv outputs/emergency/emergency_results.md
+
+      - name: Reproduce the model study (selection, variation between trainings, ablation)
+        run: |
+          python tools/model_study.py
+          git diff --exit-code -- outputs/study/model_runs.csv outputs/study/model_summary.csv outputs/study/model_study.md
 
   hosted-stack:
     name: Hosted stack (requirements-deploy.txt, no torch)

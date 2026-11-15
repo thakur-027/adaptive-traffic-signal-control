@@ -4,7 +4,10 @@
 #  Units: seconds (s), metres (m), metres/second (m/s), vehicles/second (veh/s)
 # ==========================================================================
 
-seed: 42                       # global deterministic seed
+seed: 45                       # global deterministic seed (training). The recipe below was run
+                               # with the seeds 42-46; the model trained with 45 was the best
+                               # on the validation seeds 100-104 and is the shipped one
+                               # (tools/model_study.py, outputs/study/model_study.md)
 backend: auto                  # auto | sumo | mini   (auto = SUMO if available, else mini)
 
 # --------------------------------------------------------------------------
@@ -39,22 +42,25 @@ sim:
 
 # --------------------------------------------------------------------------
 # Demand — asymmetric (E-W arterial carries 2.2x the side-street rate) so that
-# adaptivity genuinely helps. Demand is *stationary* within an episode: every
-# scenario below sets time_varying: false, so "rush" means sustained heavy demand.
-# arrival_scale multiplies the base rates below to make density scenarios.
+# adaptivity genuinely helps. arrival_scale multiplies the base rates below to make the
+# density scenarios. Four of them are *stationary* (time_varying: false), so "rush" means
+# sustained heavy demand; "surge" is time-varying: its rate is arrival_scale x a factor that
+# rises from 0.6 to 1.6 at peak_center_s and falls back again (a Gaussian of width
+# peak_width_s), i.e. from light traffic up to rush-hour level and back within one episode.
 # --------------------------------------------------------------------------
 demand:
   base_arrival_vps: 0.10       # base per-source-approach arrival rate (veh/s)
   arterial_boost: 2.2          # main E-W arterial gets this much more demand (green-wave value)
   turn_prob: 0.10              # probability a vehicle turns at an intersection (else straight)
-  peak_center_frac: 0.5        # only used if a scenario sets time_varying: true
-  peak_width_frac: 0.2         # gaussian width of the rush peak (unused while all are false)
+  peak_center_s: 600           # time-varying scenarios: the second the demand peaks at
+  peak_width_s: 240            # ... and the width (standard deviation) of that peak
 
 scenarios:
   low:    { arrival_scale: 0.35, time_varying: false, description: "Light off-peak traffic" }
   medium: { arrival_scale: 0.60, time_varying: false, description: "Moderate daytime traffic" }
   high:   { arrival_scale: 0.90, time_varying: false, description: "Heavy congested traffic" }
   rush:   { arrival_scale: 1.00, time_varying: false, description: "Rush-hour sustained heavy demand" }
+  surge:  { arrival_scale: 0.60, time_varying: true,  description: "Rush-hour surge: demand rises to a peak and falls again" }
 
 # --------------------------------------------------------------------------
 # Emergency-vehicle preemption (src/atsc/control/emergency.py)
@@ -115,6 +121,10 @@ rl:
   nn_backend: auto             # auto | torch | numpy  (auto = PyTorch if installed, else built-in NumPy net)
   share_parameters: true       # homogeneous agents share one network (fast, stable). false = independent nets
   neighbor_obs: true           # include neighbour pressures/phases in the state (enables coordination)
+  pressure_obs: true           # include each phase's pressure, the quantity max-pressure compares
+  demand_obs: true             # include each approach's arrival rate (last ~30 s) and its trend
+  emergency_lookahead: true    # an approach's emergency flag also shows a vehicle still on its
+                               # way there (0.5), not only one waiting on it (1.0)
   gamma: 0.99
   lr: 0.0005
   batch_size: 64
@@ -128,13 +138,13 @@ rl:
   dueling: true
   epsilon_start: 1.0
   epsilon_end: 0.05
-  epsilon_decay_steps: 22000   # linear decay over this many control-steps
+  epsilon_decay_steps: 70000   # linear decay over this many control-steps
   per:
     enabled: true
     alpha: 0.6                 # prioritisation exponent
     beta_start: 0.4            # importance-sampling correction start
     beta_end: 1.0
-    beta_steps: 20000
+    beta_steps: 70000
     eps: 0.000001
 
 # Optional CTDE upgrade (STRETCH — off by default). See src/atsc/agents/qmix.py
@@ -146,24 +156,30 @@ qmix:
 # Reward shaping (see REPORT.md for the exact math)
 #   r_i = -(w_wait * step_delay_i) / normalize  - w_switch * switched_i
 #         + w_emergency * emergencies_cleared_i - w_pressure * pressure_i / normalize
+#         - w_emergency_wait * emergency_vehicles_waiting_i   (averaged over the interval)
 # --------------------------------------------------------------------------
 reward:
   w_wait: 1.0
   w_pressure: 0.30
   w_switch: 0.20
-  w_emergency: 5.0
+  w_emergency: 10.0
+  w_emergency_wait: 6.0        # per emergency vehicle held at the junction, per decision
   normalize: 40.0              # scales delay so rewards sit in a friendly range
 
 # --------------------------------------------------------------------------
 # Training
 # --------------------------------------------------------------------------
 train:
-  episodes: 112                # full `python run.py train` — 112 is what produced the
-                               # shipped checkpoint (112 rows in outputs/logs/train.csv)
+  episodes: 400                # full `python run.py train` — what produced the shipped
+                               # checkpoint (400 rows in outputs/logs/train.csv)
   quick_episodes: 8            # `python run.py train --quick` (under a minute on a CPU)
-  curriculum: [low, medium, high, rush]   # scenarios cycled during training
+  curriculum: [low, medium, high, rush, surge]   # scenarios cycled during training
+  emergency_gap_s: 300         # emergency vehicles are part of training: mean seconds between
+                               # dispatches of a random type (0 = none). No rule-based
+                               # preemption is attached, so serving them is left to the agents
   episode_seconds: 1200        # shorter episodes while training (speed)
-  eval_every: 10               # run a quick greedy eval every N episodes
+  eval_every: 10               # greedy evaluation (model selection) every N episodes ...
+  eval_seeds: 2                # ... on this many episodes of every curriculum scenario
   checkpoint_dir: models/pretrained
   log_dir: outputs/logs
   tensorboard: false           # set true if tensorboard installed
@@ -172,9 +188,9 @@ train:
 # Evaluation / benchmarking
 # --------------------------------------------------------------------------
 eval:
-  seeds: [0, 1, 2]             # the 3 seeds behind the shipped outputs/benchmark_*.csv
-                               # (36 runs = 3 controllers x 4 scenarios x 3 seeds)
-  scenarios: [low, medium, high, rush]
+  seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]   # the 10 seeds behind outputs/benchmark_*.csv
+                               # (150 runs = 3 controllers x 5 scenarios x 10 seeds)
+  scenarios: [low, medium, high, rush, surge]
   controllers: [fixed_time, max_pressure, rl]
   episode_seconds: 1800        # length of every benchmark episode
   out_dir: outputs

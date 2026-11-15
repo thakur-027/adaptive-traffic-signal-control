@@ -67,3 +67,29 @@ def test_the_summary_table_and_charts(ev, cfg, dispatches, tmp_path):
     charts = ev.plot_types(comp, tmp_path, ["high"], meta)
     assert [p.name for p in charts] == [f"emergency_{k}.png" for k in meta]
     assert all(p.stat().st_size > 10_000 for p in charts)
+
+
+def test_the_agents_on_their_own_are_measured_next_to_the_shipped_set_up(ev, cfg, tmp_path):
+    """With the extra ``rl_alone`` runs every dispatch has three rows (fixed-time, RL with
+    its rule, RL with no rule), the two RL rows differ only in the rule, and the results
+    file gets the section that reports the agents alone."""
+    from atsc import vehicles
+    df = ev.evaluate(["high"], [3], dispatch_times=(60, 125), workers=1, progress=False,
+                     controllers=ev.CONTROLLERS + (ev.ALONE,))
+    assert set(df["controller"]) == {"rl", "fixed_time", ev.ALONE}
+    assert len(df) == 3 * 2 * 3 and not df["censored"].any()
+    alone = ev.alone_table(df, ["high"])
+    assert set(alone["scenario"]) == {"all", "high"} and set(alone["kind"]) == {"ambulance", "police", "fire"}
+    row = alone[(alone["kind"] == "ambulance") & (alone["scenario"] == "high")].iloc[0]
+    mean = lambda c: df[(df["kind"] == "ambulance") & (df["controller"] == c)]["travel_s"].mean()  # noqa: E731
+    assert row["travel_s_alone"] == pytest.approx(mean(ev.ALONE))
+    assert row["travel_s_rl"] == pytest.approx(mean("rl")) and row["travel_s_ft"] == pytest.approx(mean("fixed_time"))
+    assert row["alone_impr_%"] == pytest.approx(100 * (row["travel_s_ft"] - row["travel_s_alone"]) / row["travel_s_ft"])
+    # the pass condition is about the shipped set-up only: rl_alone rows never enter it
+    summary, comp = ev.summarize(df, ["high"])
+    assert ev.ALONE not in set(summary["controller"])
+    meta = {e["kind"]: e for e in vehicles.emergency_types(cfg)}
+    ev.write_markdown(comp, df, tmp_path / "r.md", ["high"], [3], (60, 125), meta, alone=alone)
+    text = (tmp_path / "r.md").read_text(encoding="utf-8")
+    assert "## The agents on their own" in text and "MARL, no rule" in text
+    assert ev.alone_table(df[df["controller"] != ev.ALONE], ["high"]).empty

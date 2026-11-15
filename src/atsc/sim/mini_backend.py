@@ -149,6 +149,7 @@ class MiniBackend(SimBackend):
         self._green: Dict[str, set] = {}
         self._delay: Dict[str, float] = {}
         self._emerg_cleared: Dict[str, int] = {}
+        self._emerg_delay: Dict[str, float] = {}
         self._acc: Optional[MetricsAccumulator] = None
         self._finalized = False
 
@@ -169,6 +170,8 @@ class MiniBackend(SimBackend):
         self._green = {iid: set() for iid in self.topo.order}
         self._delay = {iid: 0.0 for iid in self.topo.order}
         self._emerg_cleared = {iid: 0 for iid in self.topo.order}
+        self._emerg_delay = {iid: 0.0 for iid in self.topo.order}
+        self._reset_arrivals()
         self._acc = MetricsAccumulator(self.topo.n_intersections, warmup_s=self._warmup)
         self._finalized = False
 
@@ -223,9 +226,8 @@ class MiniBackend(SimBackend):
 
     def _time_factor(self) -> float:
         """Gaussian rush-hour multiplier centred within the episode."""
-        horizon = float(self.cfg.train.episode_seconds)  # nominal; scaling only needs a shape
-        center = self._scenario.get("peak_center_frac", 0.5) * horizon
-        width = max(1.0, self._scenario.get("peak_width_frac", 0.2) * horizon)
+        center = float(self._scenario.get("peak_center_s", 600.0))
+        width = max(1.0, float(self._scenario.get("peak_width_s", 240.0)))
         bump = math.exp(-0.5 * ((self._t - center) / width) ** 2)
         return 0.6 + 1.0 * bump      # ranges from 0.6 (off-peak) to 1.6 (peak)
 
@@ -238,6 +240,7 @@ class MiniBackend(SimBackend):
     def step(self) -> StepOutcome:
         rng = self._rng
         outcome = StepOutcome(time=self._t)
+        joined: Dict[Tuple[str, str], int] = {}       # vehicles joining each approach now
 
         # 1) spawn arrivals at every boundary entry
         for (iid, approach) in self._entries:
@@ -252,6 +255,7 @@ class MiniBackend(SimBackend):
                               kind=_pick_kind(self._kind_rng, self._mix_kinds, self._mix_cdf),
                               exit_dir=exit_dir)
                 self._queues[(veh.tls, veh.approach)].append(veh)
+                joined[(veh.tls, veh.approach)] = joined.get((veh.tls, veh.approach), 0) + 1
                 outcome.arrivals += 1
 
         # 2) advance vehicles in transit between intersections
@@ -260,9 +264,11 @@ class MiniBackend(SimBackend):
             remaining -= self._step_len
             if remaining <= 0.0:
                 self._queues[(dest_tls, dest_appr)].append(veh)
+                joined[(dest_tls, dest_appr)] = joined.get((dest_tls, dest_appr), 0) + 1
             else:
                 still.append((veh, remaining, dest_tls, dest_appr))
         self._transit = still
+        self._note_arrivals(joined, self._step_len)
 
         # 3) discharge green approaches at saturation flow
         for iid in self.topo.order:
@@ -288,6 +294,8 @@ class MiniBackend(SimBackend):
                 q = self._queues[(iid, approach)]
                 for veh in q:
                     veh.wait_time += self._step_len
+                    if veh.is_emergency:
+                        self._emerg_delay[iid] += self._step_len
                 inter_halt += len(q)
             halted_total += inter_halt
             self._delay[iid] += inter_halt * self._step_len
@@ -347,6 +355,11 @@ class MiniBackend(SimBackend):
         n = self._emerg_cleared[tls_id]
         self._emerg_cleared[tls_id] = 0
         return n
+
+    def pop_emergency_delay(self, tls_id: str) -> float:
+        d = self._emerg_delay[tls_id]
+        self._emerg_delay[tls_id] = 0.0
+        return d
 
     # ------------------------------------------------------------------ #
     # metrics & rendering

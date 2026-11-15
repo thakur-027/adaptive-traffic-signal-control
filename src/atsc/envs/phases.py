@@ -10,6 +10,8 @@ Guarantees (verified in tests/test_phases_safety.py):
   * every switch between two different greens is separated by yellow_s of amber AND
     all_red_s of all-red clearance, so conflicting movements never overlap;
   * a green is forced to end after max_green_s (anti-starvation);
+  * a change, once begun, is completed: a request made during YELLOW or ALL_RED cannot
+    cancel it, it is acted on from the green that follows;
   * during YELLOW and ALL_RED no approach is given green (collision-free).
 
 The machine ticks once per simulated second. active_green() returns the approaches that
@@ -48,15 +50,20 @@ class SignalFSM:
         self.state = SignalState.GREEN
         self.timer = 0            # seconds spent in the current state
         self.green_elapsed = 0    # seconds since the current green began
+        self._next = int(start_phase)  # the phase a change in progress leads to
         self._switch_started = False   # latched True on the second a switch begins
-        # A freshly entered green (including the very first one) gets one "settling"
-        # tick before its elapsed timer starts counting, so min-green is measured
-        # identically for the initial green and for greens entered mid-run.
+        # The very first green gets one "settling" tick before its elapsed timer starts
+        # counting. A green entered mid-run does not: the tick that ends the all-red already
+        # shows its first second of green, so both kinds last exactly the same time.
         self._settle_green = True
 
     # -- external control --
     def request(self, target_phase: int) -> None:
-        """Ask the controller to move to target_phase (acted on when eligible)."""
+        """Ask the controller to move to target_phase (acted on when eligible).
+
+        During YELLOW and ALL_RED the request is only remembered: the change in progress
+        runs to its green, and the request is acted on from there (after min-green).
+        """
         if not (0 <= target_phase < self.n_phases):
             raise ValueError(f"target_phase {target_phase} out of range [0,{self.n_phases})")
         self.target = int(target_phase)
@@ -91,19 +98,20 @@ class SignalFSM:
                 self._enter(SignalState.ALL_RED)
         elif self.state == SignalState.ALL_RED:
             if self.timer >= self.all_red:
-                self._begin_green(self.target)
+                self._begin_green(self._next)
 
         return self.active_green()
 
     # -- transitions --
     def _begin_transition(self) -> None:
         self._switch_started = True
+        self._next = self.target           # latched: later requests cannot cancel the change
         if self.yellow > 0:
             self._enter(SignalState.YELLOW)
         elif self.all_red > 0:
             self._enter(SignalState.ALL_RED)
         else:
-            self._begin_green(self.target)
+            self._begin_green(self._next)
 
     def _enter(self, state: SignalState) -> None:
         self.state = state
@@ -114,7 +122,7 @@ class SignalFSM:
         self.state = SignalState.GREEN
         self.timer = 0
         self.green_elapsed = 0
-        self._settle_green = True
+        self._settle_green = False
 
     # -- observation helpers --
     def active_green(self) -> Tuple[str, ...]:

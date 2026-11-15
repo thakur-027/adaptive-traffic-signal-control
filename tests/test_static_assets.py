@@ -104,3 +104,26 @@ def test_no_third_party_code_or_fonts():
         assert not re.search(r'(import|from)\s*\(?\s*["\']https?:', text), path.name
         assert not re.search(r"url\(\s*['\"]?https?:", text), path.name
         assert "fonts.googleapis" not in text and "cdn." not in text, path.name
+
+
+def test_traffic_levels_are_labelled_in_order_with_surge_last():
+    """The five traffic choices of the page, in the order of config.yaml: the label map in
+    ui.js names every scenario the server offers, and "Surge" comes after "Rush hour"."""
+    import yaml
+    ui = (JS_DIR / "ui.js").read_text(encoding="utf-8")
+    block = re.search(r"const TRAFFIC = \{([^}]*)\};", ui).group(1)
+    labels = dict(re.findall(r'(\w+):\s*"([^"]+)"', block))
+    assert list(labels.items()) == [("low", "Light"), ("medium", "Normal"), ("high", "Heavy"),
+                                    ("rush", "Rush hour"), ("surge", "Surge")]
+    config = yaml.safe_load((STATIC_DIR.parents[3] / "config.yaml").read_text(encoding="utf-8"))
+    assert list(config["scenarios"]) == list(labels)
+    assert "`${trafficName(g.sc)} traffic`" in ui            # the pill: "Surge traffic"
+
+
+def test_names_the_page_must_keep():
+    page = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    assert "<title>Adaptive Traffic Signal Control · Live</title>" in page
+    assert "<h1>Adaptive Traffic Signal Control</h1>" in page
+    for name in ("RL Agent System", "Traditional Traffic System"):
+        assert page.count(name) >= 2, name
+    assert len(re.findall(r'<p class="bench">.*</p>', page)) == 1

@@ -54,8 +54,8 @@ class RLController(Controller):
 
 
 def cfg_obs_dim(cfg) -> int:
-    from atsc.envs.spaces import obs_size
-    return obs_size(cfg.n_phases, bool(cfg.rl.neighbor_obs))
+    from atsc.envs.spaces import cfg_obs_size
+    return cfg_obs_size(cfg)
 
 
 def default_checkpoint_path(cfg) -> Path:

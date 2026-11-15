@@ -5,7 +5,7 @@ controller, and so is this. When it pre-empts a junction for an emergency vehicl
 police car or fire engine — any vehicle with ``is_emergency``), that junction's FSM is asked
 for the phase that serves the vehicle's approach, overriding the base controller's request for
 that decision. The request still goes through the safety FSM, so min-green, amber and all-red
-are never skipped. There are two ways of choosing which junctions to pre-empt:
+are never skipped. There are three modes:
 
 ``stop_line`` — local preemption, what a stand-alone signal can do
     A junction is pre-empted while an emergency vehicle is waiting on one of its approaches,
@@ -21,14 +21,21 @@ are never skipped. There are two ways of choosing which junctions to pre-empt:
     vehicles want the same junction, the one closer to it goes first (fewer junctions away,
     then already waiting, then sooner there, then the one sent first).
 
+``none`` — no rule at all
+    Nothing is overridden: what an emergency vehicle gets is whatever the base controller
+    decides. Controllers listed in ``emergency.unassisted`` get this mode; it is how
+    ``tools/emergency_eval.py`` measures what the trained agents do on their own.
+
 ``emergency.corridor`` in ``config.yaml`` lists the controllers that clear a corridor (by
 default ``rl``); every other controller — fixed-time and max-pressure — pre-empts at the stop
 line. The benchmark and the dashboard attach one override to each controller this way.
 
-The RL reward has a bonus for clearing an emergency vehicle (``reward.w_emergency``) and the
-observation has per-approach emergency flags, but training never sends an emergency vehicle,
-so the learned policy itself does not react to either: what an emergency vehicle gets, on
-any grid, comes from this override.
+Emergency vehicles are also part of training (``train.emergency_gap_s``), with no rule
+attached: the reward pays for getting one through a junction (``reward.w_emergency``) and
+charges for holding one (``reward.w_emergency_wait``), and the observation flags the approach
+it is on or heading for. So the learned policy reacts to an emergency vehicle by itself; the
+override above is the guarantee on top of it. ``outputs/emergency/emergency_results.md``
+reports both: the shipped set-up, and the agents with no rule.
 """
 from __future__ import annotations
 
@@ -36,8 +43,8 @@ from typing import Dict, List, Optional, Set, Tuple
 
 from atsc.sim.backend import APPROACHES
 
-#: The two ways of choosing which junctions to pre-empt (see the module docstring).
-MODES: Tuple[str, ...] = ("stop_line", "corridor")
+#: The ways of choosing which junctions to pre-empt (see the module docstring).
+MODES: Tuple[str, ...] = ("stop_line", "corridor", "none")
 #: Controllers that clear a green corridor when ``emergency.corridor`` is not set.
 DEFAULT_CORRIDOR: Tuple[str, ...] = ("rl",)
 
@@ -47,6 +54,13 @@ def corridor_controllers(cfg) -> Tuple[str, ...]:
     getter = getattr(cfg, "get_path", None)
     raw = getter("emergency.corridor", None) if getter else None
     return DEFAULT_CORRIDOR if raw is None else tuple(str(c) for c in raw)
+
+
+def unassisted_controllers(cfg) -> Tuple[str, ...]:
+    """The controllers that get no rule-based preemption at all (``emergency.unassisted``)."""
+    getter = getattr(cfg, "get_path", None)
+    raw = getter("emergency.unassisted", None) if getter else None
+    return tuple(str(c) for c in (raw or ()))
 
 
 class EmergencyController:
@@ -63,8 +77,13 @@ class EmergencyController:
         self.topo = topo
         self.enabled = bool(cfg.emergency.preemption)
         if mode is None:
-            mode = ("corridor" if controller is not None
-                    and controller in corridor_controllers(cfg) else "stop_line")
+            if controller is not None and controller in unassisted_controllers(cfg):
+                mode = "none"
+            elif controller is not None and controller in corridor_controllers(cfg):
+                mode = "corridor"
+            else:
+                mode = "stop_line"
+
         if mode not in MODES:
             raise ValueError(f"preemption mode must be one of {list(MODES)}, got {mode!r}")
         self.mode = mode
@@ -86,7 +105,8 @@ class EmergencyController:
 
     def apply(self, env) -> None:
         """Override FSM targets for the junctions an emergency vehicle needs (every decision)."""
-        if not self.enabled:
+        if not self.enabled or self.mode == "none":
+            self.active = set()
             return
         if self.mode == "corridor":
             self._apply_corridor(env)

@@ -6,15 +6,17 @@ benchmark plots are not copied here: the README shows them straight from `output
 
 | File | Shows |
 |---|---|
-| `dashboard_demo.gif` | the animation at the top of the README: rush hour, one ambulance chosen from the emergency menu and sent into both grids; the page plays in its automatic slow motion (0.2×) until the ambulance is through and then pauses on the result. It gets through the RL Agent System in 36 simulated seconds and through the traditional system in 147 (1:51 sooner, 4.1× faster). Cropped to the header, the controls, both grids and the tracker, and played 2.5× faster than recorded. Recorded with `python tools/record_gif.py --warm 560` (headless Chromium + ffmpeg) |
+| `dashboard_demo.gif` | the animation at the top of the README: rush hour, one ambulance chosen from the emergency menu and sent into both grids; the page plays in its automatic slow motion (0.2×) until the ambulance is through and then pauses on the result. It gets through the RL Agent System in 30 simulated seconds and through the traditional system in 133 (1:43 sooner, 4.4× faster). Cropped to the header, the controls, both grids and the tracker, and played 2.5× faster than recorded. Recorded with `python tools/record_gif.py` (headless Chromium + ffmpeg) |
 | `dashboard_desktop.png` | the whole page on a 1440-pixel-wide screen, paused on the result of an emergency test: the header and controls, both grids with their status lines, the tracker, the live result, the chart and the tiles |
-| `network_render_ambulance.png` | both grids a few seconds after an ambulance was sent: on the RL grid it has crossed J1_0 and is circled on its way to J1_1 (*Junction 2 of 2*), its route dashed and J1_1 ringed as pre-empted, already green for it (the green corridor); on the traditional grid it waits 29th in line at J1_0, too far back to be drawn, so a dashed ring marks that queue's `+24` badge |
-| `emergency_result.png` | the tracker once the same ambulance is through both grids: "RL Agent System got it through 4.6× faster · 1:51 sooner", 0:31 against 2:22 |
+| `network_render_ambulance.png` | both grids a few seconds after an ambulance was sent: on the RL grid it has crossed J1_0 and is circled on its way to J1_1 (*Junction 2 of 2*), its route dashed and J1_1 ringed as pre-empted, already green for it (the green corridor); on the traditional grid it is 26th in line at J1_0, too far back to be drawn, so a dashed ring marks that queue's `+16` badge |
+| `emergency_result.png` | the tracker once the same ambulance is through both grids: "RL Agent System got it through 5.8× faster · 2:06 sooner", 0:26 against 2:32 |
 | `emergency_timeline.png` | its timeline on both grids: sent, waiting at J1_0 and how far back, green requested, green light, crossed J1_0, waiting at J1_1, crossed J1_1, out of the grid |
 | `dashboard_phone.png` | the first screen on a 390 × 844 phone during the same test: the live status (slow motion), the RL grid with its status line, the start of the traditional grid under it, and the controls in the bottom bar |
 
 The live result describes the run on screen (one seed, still running), so it differs from
-the three-seed benchmark in `outputs/benchmark_summary.md` that the line under it quotes.
+the ten-seed benchmark in `outputs/benchmark_summary.md` that the line under it quotes. The
+stills are one dispatch and the animation another; the average over 250 rush-hour dispatches
+is 4.4× (`outputs/emergency/emergency_results.md`).
 
 To refresh the stills, run `python run.py demo` and take screenshots, or run
 `python tools/e2e_browser.py --local`, which saves desktop, laptop, phone and wake-screen

@@ -287,6 +287,41 @@ class SimBackend(abc.ABC):
     def pop_emergency_cleared(self, tls_id: str) -> int:
         """Emergency vehicles that cleared this intersection since the last call."""
 
+    def pop_emergency_delay(self, tls_id: str) -> float:
+        """Seconds emergency vehicles spent queued at an intersection since the last call.
+
+        Used by the reward (``reward.w_emergency_wait``). Default: 0, for a backend that
+        does not track it.
+        """
+        return 0.0
+
+    # -- demand estimate (what a detector on each approach would count) --- #
+    ARRIVAL_FAST_S = 30.0       # averaging time of the arrival-rate estimate
+    ARRIVAL_SLOW_S = 120.0      # ... and of the slower one the trend is measured against
+
+    def _reset_arrivals(self) -> None:
+        self._arr_fast = {(iid, a): 0.0 for iid in self.topo.order for a in APPROACHES}
+        self._arr_slow = dict(self._arr_fast)
+
+    def _note_arrivals(self, counts: Dict[Tuple[str, str], int], dt: float = 1.0) -> None:
+        """Fold one step's arrivals per approach into the two running averages."""
+        kf, ks = dt / self.ARRIVAL_FAST_S, dt / self.ARRIVAL_SLOW_S
+        fast, slow = self._arr_fast, self._arr_slow
+        for key in fast:
+            rate = counts.get(key, 0) / dt
+            fast[key] += kf * (rate - fast[key])
+            slow[key] += ks * (rate - slow[key])
+
+    def arrival_rate(self, tls_id: str, approach: str) -> float:
+        """Vehicles per second joining an approach, averaged over about the last 30 s."""
+        return getattr(self, "_arr_fast", {}).get((tls_id, approach), 0.0)
+
+    def arrival_trend(self, tls_id: str, approach: str) -> float:
+        """The 30 s arrival rate minus the 120 s one: positive while demand is rising."""
+        key = (tls_id, approach)
+        return (getattr(self, "_arr_fast", {}).get(key, 0.0)
+                - getattr(self, "_arr_slow", {}).get(key, 0.0))
+
     # -- metrics & rendering ---------------------------------------------- #
     @abc.abstractmethod
     def metrics(self) -> MetricsAccumulator: ...

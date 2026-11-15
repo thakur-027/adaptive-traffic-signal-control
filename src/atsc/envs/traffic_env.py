@@ -18,11 +18,13 @@ Reward (per agent i), computed over the decision interval — see REPORT.md::
           - w_pressure * pressure_i / N
           - w_switch * switched_i
           + w_emergency * emergencies_cleared_i
+          - w_emergency_wait * emergencies_held_i
 
 where ``delay_i`` is vehicle-seconds of delay accrued at i during the interval,
 ``pressure_i`` is the max-pressure quantity at the end of the interval, ``switched_i``
 is 1 if a phase change was initiated, ``emergencies_cleared_i`` counts emergency
-vehicles that cleared i, and ``N = reward.normalize``.
+vehicles that cleared i, ``emergencies_held_i`` is the number of emergency vehicles held
+at i (averaged over the interval), and ``N = reward.normalize``.
 """
 from __future__ import annotations
 
@@ -36,7 +38,7 @@ except Exception:  # pragma: no cover
     gym_spaces = None
 
 from atsc.envs.phases import SignalFSM
-from atsc.envs.spaces import build_observation, obs_size
+from atsc.envs.spaces import build_observation, cfg_obs_size, emergency_flags, obs_options
 from atsc.sim import make_backend
 from atsc.sim.backend import build_topology
 
@@ -64,7 +66,8 @@ class MultiAgentTrafficEnv:
 
         self._decision_interval = int(cfg.signal.decision_interval_s)
         self._episode_seconds = int(cfg.sim.episode_seconds)
-        self._obs_dim = obs_size(self.n_phases, self.neighbor_obs)
+        self._obs_opts = obs_options(cfg)
+        self._obs_dim = cfg_obs_size(cfg)
 
         self.fsms: Dict[str, SignalFSM] = {}
         self._emergency_ctrl = None      # optional EmergencyController (set externally)
@@ -224,9 +227,12 @@ class MultiAgentTrafficEnv:
 
     # -- observation & reward -------------------------------------------- #
     def _observations(self) -> Dict[str, np.ndarray]:
+        o = self._obs_opts
+        emergency = emergency_flags(self.backend) if o["emergency_lookahead"] else None
         return {
             iid: build_observation(
-                self.backend, self.topo, iid, self.fsms[iid], self.fsms, self.neighbor_obs
+                self.backend, self.topo, iid, self.fsms[iid], self.fsms, self.neighbor_obs,
+                pressure_obs=o["pressure_obs"], demand_obs=o["demand_obs"], emergency=emergency,
             )
             for iid in self.possible_agents
         }
@@ -234,6 +240,7 @@ class MultiAgentTrafficEnv:
     def _rewards(self, switched: Dict[str, int], cleared: Dict[str, int]) -> Dict[str, float]:
         rc = self.cfg.reward
         norm = float(rc.normalize)
+        w_emg_wait = float(rc.get("w_emergency_wait", 0.0))
         rewards: Dict[str, float] = {}
         for iid in self.possible_agents:
             delay = self.backend.pop_delay(iid)              # vehicle-seconds this interval
@@ -242,6 +249,7 @@ class MultiAgentTrafficEnv:
             r -= (rc.w_pressure * pressure) / norm
             r -= rc.w_switch * switched.get(iid, 0)
             r += rc.w_emergency * cleared.get(iid, 0)
+            r -= w_emg_wait * self.backend.pop_emergency_delay(iid) / self._decision_interval
             rewards[iid] = float(r)
         return rewards
 

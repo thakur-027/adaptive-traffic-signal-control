@@ -131,7 +131,8 @@ class MultiAgentDQN:
         """Load a checkpoint written by :meth:`save`, after checking that it fits the config.
 
         A checkpoint only works with the settings it was trained with; loading one under
-        different ``rl.neighbor_obs`` / ``rl.share_parameters`` / network settings used to fail
+        different observation switches (``rl.neighbor_obs``, ``rl.pressure_obs``,
+        ``rl.demand_obs``) / ``rl.share_parameters`` / network settings used to fail
         with an obscure shape error (or, for independent agents, silently leave some agents
         untrained). Now it raises one readable ``ValueError`` that names every mismatch.
         """
@@ -147,7 +148,8 @@ class MultiAgentDQN:
         problems = []
         if int(payload.get("obs_dim", self.obs_dim)) != self.obs_dim:
             problems.append(f"observation size {payload['obs_dim']} in the checkpoint, {self.obs_dim} "
-                            "with this config (rl.neighbor_obs or network.phase_scheme changed)")
+                            "with this config (rl.neighbor_obs, rl.pressure_obs, rl.demand_obs or "
+                            "network.phase_scheme differs from what the model was trained with)")
         if int(payload.get("n_actions", self.n_actions)) != self.n_actions:
             problems.append(f"{payload['n_actions']} phases in the checkpoint, {self.n_actions} with "
                             "this config (network.phase_scheme changed)")

@@ -116,7 +116,7 @@
           textLength="114" lengthAdjust="spacing">green time ≥ min green ?</text>
     <g font-size="9.5" fill="#7f90b3" text-anchor="end">
       <text x="96" y="118" textLength="47" lengthAdjust="spacing">no → hold,</text>
-      <text x="96" y="131" textLength="67" lengthAdjust="spacing">request ignored</text>
+      <text x="96" y="131">request waits</text>
     </g>
     <g font-size="9.5" fill="#7f90b3" text-anchor="middle">
       <text x="326" y="150" textLength="61" lengthAdjust="spacing">switch granted</text>

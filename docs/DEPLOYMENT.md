@@ -164,23 +164,23 @@ the live site does not use. Always run **one** worker: every visitor shares one 
 `src/atsc/agents/net.py`, which loads the same shipped checkpoint and picks the same greedy
 actions. The dashboard path imports only numpy and PyYAML from the project side.
 
-Measured on the deploy stack (Python 3.12.6, `pip install -r requirements-deploy.txt`, the
-exact start command from `render.yaml`, one uvicorn worker, a 2.8 GHz Xeon; CPU is the
-process's total as a percentage of one core):
+Measured on the deploy stack (Python 3.12, `pip install -r requirements-deploy.txt`, the
+exact start command from `render.yaml`, one uvicorn worker, a 2.1 GHz Xeon; CPU is the
+process's total as a percentage of one core, over the last 30 s):
 
 | Load | Resident memory | CPU | Tick (simulate + encode) | Per viewer |
 |---|---|---|---|---|
-| idle, medium 1× | 76 MiB | 1.5 % | ~2 ms mean | — |
-| 50 viewers, rush 1× (the page's default) | 88 MiB | 10 % | 3.2 ms mean, 5.8 ms p95 | 5.4 KB/s, 5 frames/s |
-| 100 viewers, medium 1× | 101 MiB | 17 % | 2.9 ms mean, 5.0 ms p95 | 4.0 KB/s, 5 frames/s |
-| 60 viewers, rush 8× (worst case) | 91 MiB | 34 % | 16.1 ms mean, 22.7 ms p95 | 19.8 KB/s, 5 frames/s |
+| idle, medium 1× | 76 MiB | 1.2 % | 2.1 ms mean, 3.6 ms p95 | — |
+| 50 viewers, rush 1× (the page's default) | 84 MiB | 5 % | 2.6 ms mean, 4.5 ms p95 | 5.2 KB/s, 5 frames/s |
+| 100 viewers, medium 1× | 101 MiB | 8 % | 2.3 ms mean, 4.1 ms p95 | 3.9 KB/s, 5 frames/s |
+| 60 viewers, rush 8× (worst case) | 88 MiB | 15 % | 12.7 ms mean, 19.7 ms p95 | 20.8 KB/s, 5 frames/s |
 
 against a 200 ms tick, a 512 MiB instance and Render's **0.1 CPU** (10 % of a core) on the
-free plan. Memory is never the limit; CPU can be. The default view leaves plenty of room
-(1.5 % idle, about 0.15 % per extra viewer on this machine). Rush hour at 8× costs about
-7 % with nobody watching, so on the free plan several viewers at 8× will tick slower than
-real time — the page keeps interpolating smoothly between whatever frames arrive, and the
-race simply advances more slowly. The 101st viewer is told
+free plan. Memory is never the limit; CPU can be. The default view leaves room (1.2 % idle,
+about 0.07 % per extra viewer on this machine). Rush hour at 8× is the expensive case, so on
+the free plan several viewers at 8× will tick slower than real time — the page keeps
+interpolating smoothly between whatever frames arrive, and the race simply advances more
+slowly. The 101st viewer is told
 `{"t": "busy", "retry_s": 30}` (`dashboard.max_clients`) and retries later.
 
 ### One BLAS thread
@@ -294,7 +294,7 @@ live, `/healthz` reports the new `build` id, and a tab that was open on the old 
 reloads itself once when it reconnects (the page compares its build id with the server's).
 
 The same push runs GitHub Actions ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)):
-the test suite, the 36-run benchmark reproduced byte for byte from the shipped checkpoint
+the test suite, the 150-run benchmark reproduced byte for byte from the shipped checkpoint
 (with PyTorch and with the NumPy network), and this deploy stack — `requirements-deploy.txt`
 on Python 3.12.6, `render.yaml`'s start command, `/healthz` and the WebSocket. Render does not
 wait for it by default. To deploy only commits that pass, set **Settings → Auto-Deploy → After
@@ -309,8 +309,8 @@ checks fail — and also one where no check ran at all.
 python run.py demo           # dashboard on http://127.0.0.1:8000
 python run.py doctor         # dependency and environment check
 python run.py train --quick  # 8 episodes, a separate *_quick.pt
-python run.py eval           # the 36-run benchmark (built-in simulator)
-pytest                       # 189 tests
+python run.py eval           # the 150-run benchmark (built-in simulator)
+pytest                       # 256 tests
 python tools/e2e_browser.py --local   # the browser check above, against a local server
 ```
 

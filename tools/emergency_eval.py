@@ -2,7 +2,7 @@
 """Emergency-vehicle evaluation: the MARL controller against the fixed-time baseline, for
 every emergency vehicle type.
 
-    python tools/emergency_eval.py                      # 4 scenarios x 10 seeds x 25 dispatches
+    python tools/emergency_eval.py                      # 5 scenarios x 10 seeds x 25 dispatches
     python tools/emergency_eval.py --scenarios rush --seeds 0 1 2 3 4
     python tools/emergency_eval.py --quick              # 1 scenario x 2 seeds, a smoke test
 
@@ -57,6 +57,8 @@ if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
 CONTROLLERS = ("rl", "fixed_time")
+#: The RL agents with no preemption rule attached: what the trained policy does on its own.
+ALONE = "rl_alone"
 LABEL = {"rl": "MARL", "fixed_time": "Fixed-time"}
 METRICS = (  # column, label, unit, decimals
     ("travel_s", "Average travel time", "s", 1),
@@ -232,11 +234,12 @@ def run_task(task: Tuple[str, str, int, Tuple[int, ...]]) -> List[Dict[str, obje
 
     name, scenario, seed, dispatch_times = task
     cfg, topo = _STATE["cfg"], _STATE["topo"]
-    controller = _controller(name)
+    controller = _controller("rl" if name == ALONE else name)
     controller.reset()
     env = MultiAgentTrafficEnv(cfg, backend_name="mini", topo=topo)
     env._episode_seconds = int(_STATE["episode_s"])
-    env.set_emergency_controller(EmergencyController(cfg, topo, controller=controller.name))
+    env.set_emergency_controller(EmergencyController(
+        cfg, topo, controller=controller.name, mode="none" if name == ALONE else None))
     env.reset(scenario=scenario, seed=seed)
     types = vehicle_catalogue.emergency_types(cfg)
     pending = sorted(int(t) for t in dispatch_times)
@@ -371,9 +374,32 @@ def _signed_pct(v: float) -> str:
     return ("+" if v > 0 else "−" if v < 0 else "") + f"{abs(v):.1f} %"
 
 
+def alone_table(df, scenarios: Sequence[str]):
+    """Travel time of the RL agents with no preemption rule (``ALONE``) next to the two
+    evaluated set-ups, per type and scenario (and pooled). Empty without ``ALONE`` rows."""
+    import pandas as pd
+
+    ok = df[~df["censored"]]
+    if ALONE not in set(ok["controller"]):
+        return pd.DataFrame()
+    rows = []
+    for kind in ok["kind"].unique():
+        for scen in ["all", *scenarios]:
+            part = ok[ok["kind"] == kind]
+            if scen != "all":
+                part = part[part["scenario"] == scen]
+            m = part.groupby("controller")["travel_s"].mean()
+            if not {ALONE, "rl", "fixed_time"} <= set(m.index):
+                continue
+            rows.append({"kind": kind, "scenario": scen, "travel_s_ft": float(m["fixed_time"]),
+                         "travel_s_rl": float(m["rl"]), "travel_s_alone": float(m[ALONE]),
+                         "alone_impr_%": _pct(float(m["fixed_time"]), float(m[ALONE]))})
+    return pd.DataFrame(rows)
+
+
 def write_markdown(comp, df, path: Path, scenarios: Sequence[str], seeds: Sequence[int],
                    times: Sequence[int], kinds_meta: Dict[str, Dict[str, object]],
-                   preemption: Optional[Dict[str, str]] = None) -> Dict[str, bool]:
+                   preemption: Optional[Dict[str, str]] = None, alone=None) -> Dict[str, bool]:
     """Write the results table and return ``{kind: passed}`` (pooled over every scenario).
 
     ``preemption`` names each controller's kind of preemption for the setup line
@@ -443,6 +469,24 @@ def write_markdown(comp, df, path: Path, scenarios: Sequence[str], seeds: Sequen
     lines += ["", f"Overall: **{'PASS' if overall else 'FAIL'}**", "",
               "*MARL faster / tie / slower* is the share of matched dispatches in which the "
               "vehicle got through the MARL grid sooner, at the same second, or later.", ""]
+    if alone is not None and len(alone):
+        lines += ["## The agents on their own", "",
+                  "Emergency vehicles are part of training, so the agents react to them without "
+                  "any rule: an approach's emergency flag in the observation shows a vehicle "
+                  "waiting on it or still on its way to it, and the reward charges for every "
+                  "decision one is kept waiting. This table takes the preemption rule away from "
+                  "the MARL grid and leaves fixed-time its stop-line preemption. It is not part "
+                  "of the pass condition.", "",
+                  "| Vehicle type | Scenario | Fixed-time, stop-line rule | MARL, no rule | "
+                  "Improvement | MARL with the corridor rule |",
+                  "|---|---|---:|---:|---:|---:|"]
+        for kind, meta in kinds_meta.items():
+            for _, r in alone[alone["kind"] == kind].iterrows():
+                scen = "**all**" if r["scenario"] == "all" else r["scenario"]
+                lines.append(f"| {meta['label']} | {scen} | {r['travel_s_ft']:.1f} s | "
+                             f"{r['travel_s_alone']:.1f} s | {_signed_pct(r['alone_impr_%'])} | "
+                             f"{r['travel_s_rl']:.1f} s |")
+        lines.append("")
     lines += ["## Charts", ""]
     for kind in pooled:
         lines += [f"![{kinds_meta[kind]['label']}: MARL against fixed-time on the four metrics, "
@@ -613,7 +657,8 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     print(f"Emergency evaluation: types {list(kinds_meta)}, scenarios {scenarios}, "
           f"seeds {seeds}, {len(times)} dispatches per episode", file=sys.stderr)
     t0 = time.time()
-    df = evaluate(scenarios, seeds, times, config_path=args.config, checkpoint=args.checkpoint,
+    df = evaluate(scenarios, seeds, times, controllers=CONTROLLERS + (ALONE,),
+                  config_path=args.config, checkpoint=args.checkpoint,
                   nn_backend=args.nn_backend, workers=args.workers)
     censored = int(df["censored"].sum())
     if censored:
@@ -627,8 +672,11 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
     corridor = corridor_controllers(cfg)
     modes = {c: ("green corridor along the route" if c in corridor else "stop-line preemption")
              for c in CONTROLLERS}
+    alone = alone_table(df, scenarios)
+    if len(alone):
+        alone.to_csv(out / "emergency_agents_alone.csv", index=False)
     verdict = write_markdown(comp, df, out / "emergency_results.md", scenarios, seeds, times,
-                             kinds_meta, preemption=modes)
+                             kinds_meta, preemption=modes, alone=alone)
     plot_types(comp, out, scenarios, kinds_meta)
 
     print(f"\nDone in {time.time() - t0:.0f} s -> {out}", file=sys.stderr)

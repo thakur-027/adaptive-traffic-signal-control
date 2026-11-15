@@ -144,6 +144,9 @@ class SumoBackend(SimBackend):
         self._acc = MetricsAccumulator(self.topo.n_intersections, warmup_s=self._warmup)
         self._delay = {iid: 0.0 for iid in self.topo.order}
         self._emerg_cleared = {iid: 0 for iid in self.topo.order}
+        self._emerg_delay = {iid: 0.0 for iid in self.topo.order}
+        self._seen_on = {}                 # (junction, approach) -> vehicle ids on it last second
+        self._reset_arrivals()
         self._green = {iid: set() for iid in self.topo.order}
         self._known_emerg = set()
         self._arrived_emerg = set()
@@ -284,6 +287,26 @@ class SumoBackend(SimBackend):
             halted_total += inter_halt
             self._delay[iid] += inter_halt * self._step_len
 
+        # demand estimate: vehicles that entered each approach this second, and the seconds
+        # emergency vehicles stood still on one
+        joined = {}
+        for iid in self.topo.order:
+            for a in APPROACHES:
+                ids = set()
+                for lane in self._approach_lanes(iid, a):
+                    ids.update(conn.lane.getLastStepVehicleIDs(lane))
+                new = len(ids - self._seen_on.get((iid, a), set()))
+                if new:
+                    joined[(iid, a)] = new
+                self._seen_on[(iid, a)] = ids
+                for vid in ids & self._known_emerg:
+                    try:
+                        if conn.vehicle.getSpeed(vid) < 0.1:
+                            self._emerg_delay[iid] += self._step_len
+                    except Exception:
+                        pass
+        self._note_arrivals(joined, self._step_len)
+
         veh_ids = conn.vehicle.getIDList()
         present = len(veh_ids)
         mean_speed = 0.0
@@ -368,6 +391,11 @@ class SumoBackend(SimBackend):
         n = self._emerg_cleared[tls_id]
         self._emerg_cleared[tls_id] = 0
         return n
+
+    def pop_emergency_delay(self, tls_id: str) -> float:
+        d = self._emerg_delay[tls_id]
+        self._emerg_delay[tls_id] = 0.0
+        return d
 
     # ------------------------------------------------------------------ #
     # metrics, rendering, emergencies

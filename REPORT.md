@@ -16,13 +16,15 @@ implements and evaluates a **multi-agent Deep Reinforcement Learning (DRL) contr
 adapts signal timing to live traffic on a grid of intersections. Each intersection is an
 independent **Double + Dueling DQN** agent with **Prioritized Experience Replay**; agents
 observe their neighbours, which lets coordinated *green-wave* progression emerge. The system
-runs on the **SUMO** microscopic simulator (with a self-contained fallback simulator), adds
-**emergency-vehicle preemption**, and is benchmarked against **fixed-time** and **max-pressure**
-controllers across four traffic densities. On identical traffic, the RL controller reduces
-average waiting time by **16–61%** versus fixed-time (mean **≈38%**), with the largest gains
-in congested conditions, and its green corridor clears an ambulance up to **~4.5× faster** (at
-rush); every emergency type — ambulance, police car, fire engine — gets through faster on
-average than under fixed-time.
+runs on the **SUMO** microscopic simulator (with a self-contained fallback simulator), learns
+to make way for **emergency vehicles** and adds a preemption rule on top, and is benchmarked
+against **fixed-time** and **max-pressure** controllers across five traffic scenarios, one of
+them a time-varying surge, on ten seeds each. On identical traffic, the RL controller reduces
+average waiting time by **27–71%** versus fixed-time (mean **≈45%**). Against max-pressure it
+is level in light and medium traffic and **9% and 17% lower at high and rush demand**, the
+only differences beyond seed-to-seed noise. Five independently trained models show how much
+of that depends on the training run. An ambulance gets through the grid **~4.4× faster** at
+rush hour than under fixed-time.
 
 ---
 
@@ -97,7 +99,7 @@ adaptivity is genuinely rewarded.
 We model each intersection *i* as an agent in a **Partially-Observable Markov Game**
 (one shared, homogeneous policy; decentralised execution).
 
-### 4.1 State  `s_i ∈ ℝ^23` (2×2 grid, 2-phase scheme)
+### 4.1 State  `s_i ∈ ℝ^33` (2×2 grid, 2-phase scheme)
 
 | Component | Dim | Description |
 |---|---:|---|
@@ -105,12 +107,17 @@ We model each intersection *i* as an agent in a **Partially-Observable Markov Ga
 | Cumulative waiting time per approach | 4 | Σ accumulated wait / normaliser (100 s) |
 | Current phase (one-hot) | 2 | active green phase |
 | Green time elapsed | 1 | seconds since phase start / max-green |
-| Emergency flag per approach | 4 | 1 if an emergency vehicle is present |
+| Emergency flag per approach | 4 | 1 while an emergency vehicle waits on the approach, 0.5 while one is on its way to it (`rl.emergency_lookahead`) |
 | **Neighbour pressure** (N,E,S,W) | 4 | tanh(neighbour pressure / 40) — coordination |
 | **Neighbour phase** (N,E,S,W) | 4 | neighbour's active phase index |
+| **Per-phase pressure** | 2 | tanh(pressure of the phase / 20): the queue on the approaches the phase serves minus the queues they feed — the quantity the max-pressure rule compares (`rl.pressure_obs`) |
+| **Arrival rate** per approach | 4 | vehicles/s joining the approach, averaged over ≈30 s, / 0.5 (`rl.demand_obs`) |
+| **Arrival trend** per approach | 4 | the 30 s rate minus the 120 s rate, / 0.2, clipped to ±1: positive while demand is building (`rl.demand_obs`) |
 
-The final 8 neighbour features (toggled by `rl.neighbor_obs`) are what allow **green-wave**
-coordination to emerge without a central controller.
+The 8 neighbour features (toggled by `rl.neighbor_obs`) are what allow **green-wave**
+coordination to emerge without a central controller. The last 10 features were added to give
+the agent what max-pressure sees and an estimate of demand a detector on each approach could
+provide; §6.5 measures what each of them buys.
 
 ### 4.2 Action  `a_i ∈ {0, …, P−1}`
 
@@ -125,7 +132,8 @@ guaranteed by construction and verified by unit tests, not learned.
 For agent *i* over one decision interval (5 s):
 
 ```
-r_i = − w_wait · (Δ_i / N)  −  w_pressure · (P_i / N)  −  w_switch · 1[switched_i]  +  w_emergency · c_i
+r_i = − w_wait · (Δ_i / N)  −  w_pressure · (P_i / N)  −  w_switch · 1[switched_i]
+      + w_emergency · c_i   −  w_emergency_wait · h_i
 ```
 
 | Symbol | Meaning | Value |
@@ -133,15 +141,17 @@ r_i = − w_wait · (Δ_i / N)  −  w_pressure · (P_i / N)  −  w_switch · 1
 | `Δ_i` | vehicle-seconds of delay accrued at *i* during the interval | — |
 | `P_i` | max-pressure quantity = Σ(incoming queue) − ½ Σ(downstream queue) | — |
 | `1[switched_i]` | 1 if a phase change was initiated (anti-flicker penalty) | — |
-| `c_i` | number of emergency vehicles cleared through *i* | — |
+| `c_i` | number of emergency vehicles that crossed *i* during the interval | — |
+| `h_i` | emergency vehicles held at *i*, averaged over the interval | — |
 | `N` | reward normaliser | 40 |
-| `w_wait, w_pressure, w_switch, w_emergency` | weights | 1.0, 0.30, 0.20, 5.0 |
+| `w_wait, w_pressure, w_switch` | weights | 1.0, 0.30, 0.20 |
+| `w_emergency, w_emergency_wait` | weights | 10.0, 6.0 |
 
 Minimising delay and pressure reduces congestion; the switch penalty discourages wasteful
-flicker; the emergency term rewards clearing ambulances quickly. Training never sends an
-emergency vehicle, though, so `c_i` and the four emergency flags are always zero while the
-shipped policy learns: emergency vehicles are handled by the rule-based preemption
-(`control/emergency.py`, a green corridor on the RL grid; §6.3), not by the learned policy.
+flicker. The two emergency terms are live during training: emergency vehicles of a random
+type are dispatched on average every 300 s of an episode (`train.emergency_gap_s`), at most
+two at a time, **with no preemption rule attached**, so getting them through is left to the
+agents. §6.3 measures what the policy learned from that.
 
 ### 4.4 Learning algorithm
 
@@ -155,13 +165,18 @@ shipped policy learns: emergency vehicles are handled by the rule-based preempti
   at 10; **ε-greedy** exploration decaying 1.0 → 0.05.
 - **Shared parameters** across the homogeneous agents (shared-parameter independent
   Q-learning) with a pooled replay buffer for sample efficiency.
-- **Curriculum**: episodes cycle low → medium → high → rush density.
+- **Curriculum**: 400 episodes of 1200 s cycling low → medium → high → rush → surge.
+- **Time limit**: an episode ends because time is up, not because the traffic ends, so the
+  last transition is stored as non-terminal and bootstraps like every other.
+- **Model selection during a run**: every 10 episodes the greedy policy is evaluated on
+  every curriculum scenario (two fixed seeds each, derived from the training seed and
+  distinct from the benchmark's), and the best checkpoint is kept.
 
 > **Implementation note.** The network runs on **PyTorch** when available and transparently
 > falls back to an equivalent **from-scratch NumPy** implementation (manual back-propagation +
 > Adam) sharing a portable weight format, so training and inference work even where PyTorch
-> cannot be installed. The results in this report were produced with the NumPy backend on a
-> CPU-only machine.
+> cannot be installed. The shipped model was trained with PyTorch on one CPU core (about
+> eight minutes); the benchmark gives byte-identical results with either network.
 
 ---
 
@@ -170,89 +185,188 @@ shipped policy learns: emergency vehicles are handled by the rule-based preempti
 | Item | Value |
 |---|---|
 | Network | 2×2 grid, 1 lane/approach, 200 m links |
-| Densities | low (0.35×), medium (0.60×), high (0.90×), rush (sustained 1.0× heavy) |
+| Scenarios | low (0.35×), medium (0.60×), high (0.90×), rush (sustained 1.0×), surge (0.60× scaled by a factor that rises from 0.6 to 1.6 at 600 s and falls back, i.e. 0.36× → 0.96× → 0.36×) |
 | Baselines | Fixed-time (30 s split) · Max-pressure (throughput-optimal reference) |
-| Seeds | 3 identical seeds (0, 1, 2) per (controller, scenario) — 36 runs in `outputs/benchmark_results.csv` |
+| Seeds | 10 identical seeds (0–9) per (controller, scenario) — 150 runs in `outputs/benchmark_results.csv` |
 | Episode | 1800 s simulated, 30 s warm-up excluded from metrics |
 | Metrics | avg waiting time, avg queue, throughput, avg speed, fuel/CO₂ proxy, emergency clearance |
+| Statistics | paired by seed: mean of the per-seed differences with a 95 % Student-t interval |
+| Simulator | built-in point-queue model for every headline number; SUMO 1.18 for §6.6 |
 
 All controllers are evaluated on **byte-identical traffic** (same seed → same vehicles), so
 every difference is attributable to the control policy alone.
+
+**Models.** The training recipe was run five times (training seeds 42–46). The five models
+were compared on the **validation seeds 100–104**, which are neither training traffic nor
+benchmark seeds, and the one with the lowest mean waiting time there (seed 45) is the shipped
+model. Everything in §6.1–6.3 is that model; §6.4 reports all five.
 
 ---
 
 ## 6. Results
 
-### 6.1 Headline comparison (mean over seeds)
+### 6.1 Waiting time (s per vehicle, mean over ten seeds)
 
-| Scenario | Avg wait — Fixed | Avg wait — Max-Pressure | Avg wait — **RL** | **RL vs Fixed** |
-|---|---:|---:|---:|---:|
-| Low | 26.3 s | 19.2 s | 22.0 s | **−16.2%** |
-| Medium | 34.3 s | 22.5 s | 24.8 s | **−27.6%** |
-| High | 68.7 s | 35.6 s | 35.6 s | **−48.2%** |
-| Rush | 113.0 s | 50.5 s | 43.9 s | **−61.1%** |
-| **Mean** | | | | **≈ −38%** |
+| Scenario | Fixed | Max-Pressure | **RL** | **RL vs Fixed** | RL − Fixed (95 % CI) | **RL vs Max-Pressure** | RL − Max-Pressure (95 % CI) | RL lower in |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Low | 26.0 | 18.3 | 19.0 | **−27.2%** | −7.1 ± 0.6 | +3.4% | +0.6 ± 0.7 | 2 of 10 |
+| Medium | 33.9 | 22.7 | 22.8 | **−32.6%** | −11.0 ± 0.9 | +0.4% | +0.1 ± 0.9 | 6 of 10 |
+| High | 70.1 | 33.9 | 30.9 | **−56.0%** | −39.2 ± 8.7 | **−8.9%** | −3.0 ± 1.2 | 10 of 10 |
+| Rush | 122.8 | 43.3 | 36.0 | **−70.7%** | −86.8 ± 10.6 | **−16.9%** | −7.3 ± 2.7 | 10 of 10 |
+| Surge | 40.6 | 25.8 | 25.1 | **−38.2%** | −15.5 ± 2.3 | −2.9% | −0.7 ± 0.9 | 7 of 10 |
+| **Mean** | | | | **−45.0%** | | | | |
 
-### 6.2 Queue length (vehicles / intersection)
+Against fixed-time every difference is far outside its interval. Against max-pressure the
+differences at high and rush demand are outside it (RL is lower in every seed); at low,
+medium and surge demand the interval includes zero, so those are ties, with max-pressure
+nominally ahead at low demand.
 
-| Scenario | Fixed | Max-Pressure | **RL** | **RL vs Fixed** |
-|---|---:|---:|---:|---:|
-| Low | 3.0 | 2.2 | 2.5 | −16% |
-| Medium | 6.8 | 4.4 | 4.9 | −28% |
-| High | 20.1 | 10.4 | 10.4 | −48% |
-| Rush | 36.5 | 16.3 | 14.2 | −61% |
+### 6.2 Queue length and throughput
 
-### 6.3 Emergency-vehicle clearance time
+| Scenario | Queue (veh/junction): Fixed | Max-Pressure | **RL** | Trips completed: Fixed | Max-Pressure | **RL** |
+|---|---:|---:|---:|---:|---:|---:|
+| Low | 2.9 | 2.0 | 2.1 | 793 | 794 | 794 |
+| Medium | 6.6 | 4.4 | 4.4 | 1368 | 1370 | 1371 |
+| High | 20.6 | 9.9 | 9.0 | 2004 | 2056 | 2060 |
+| Rush | 40.2 | 14.1 | 11.7 | 2088 | 2276 | 2287 |
+| Surge | 7.3 | 4.6 | 4.5 | 1287 | 1287 | 1285 |
 
-With preemption enabled, the benchmark's ambulance clears its corridor **1.4× to 4.5× faster**
-than under fixed-time control — measured 26.0→18.7 s (low), 28.7→16.3 s (medium), 80.0→31.7 s
-(high), 113.7→25.3 s (rush) from `outputs/benchmark_results.csv`. The RL grid clears a green
-corridor: from the moment the vehicle is sent, every junction still ahead of it requests the
-phase that serves it, so the junction ahead has switched and begun to empty its queue before
-the vehicle arrives; fixed-time (and max-pressure) pre-empt a junction only once the vehicle
-waits at its stop line. Both go through the safety FSM, so yellow and all-red are never
-skipped. The advantage grows with congestion (largest, ~4.5×, at rush).
+### 6.3 Emergency vehicles
 
-`tools/emergency_eval.py` measures each emergency type separately: in each of 40 episodes (four
-densities × seeds 0–9) it sends one vehicle of each type at 25 moments, each into its own copy
-of the running simulation, under both controllers — 1,000 matched dispatches per type
-(`outputs/emergency/`). Pooled over the densities:
+**The benchmark's ambulance** (one per episode, east–west) clears the grid in 19.5 s (low),
+17.3 s (medium), 26.0 s (high), 29.2 s (rush) and 24.8 s (surge) under RL, against 25.4, 28.9,
+72.3, 106.1 and 63.7 s under fixed-time: 1.3× to 3.6× faster.
 
-| Vehicle (corridor) | Travel time, Fixed → **RL** | Waiting time | Stops | Time to clear a junction |
-|---|---:|---:|---:|---:|
-| Ambulance (EW) | 61.7 → **24.5 s** (−60.4%) | 49.7 → 12.5 s | 1.78 → 1.54 | 24.8 → 6.2 s |
-| Police car (NS) | 22.9 → **20.9 s** (−8.9%) | 11.9 → 9.9 s | 1.40 → 1.29 | 5.9 → 4.9 s |
-| Fire engine (EW) | 64.0 → **26.3 s** (−58.9%) | 51.0 → 13.3 s | 1.80 → 1.66 | 25.5 → 6.7 s |
+**Every type, many dispatches.** `tools/emergency_eval.py` sends one vehicle of each type at
+25 moments of each of 50 episodes (five scenarios × seeds 0–9), each into its own copy of the
+running simulation, under both controllers — 1,250 matched dispatches per type
+(`outputs/emergency/`). Three set-ups are compared: fixed-time with stop-line preemption (a
+junction switches once the vehicle waits at it); the RL agents with **no rule at all**; and
+the shipped set-up, the RL agents plus a green corridor (every junction still ahead of the
+vehicle requests its phase from the moment it is sent). All requests go through the safety
+FSM, so yellow and all-red are never skipped. Travel time through the grid, pooled:
 
-Every type is faster under RL at every density. The police car, the only one on the side
-street, is the narrow case (−2.2% at rush, within the seed-to-seed spread): the agents give the
-side street less green than fixed-time's even split, so at its first junction it meets a red
-light and a longer queue more often, and its lead comes from the corridor clearing the second
-junction (see §8, item 6).
+| Vehicle (corridor) | Fixed-time, stop-line rule | RL, no rule | **RL + corridor** | Waiting time, Fixed → RL + corridor | Stops | RL + corridor faster / tie / slower |
+|---|---:|---:|---:|---:|---:|---:|
+| Ambulance (EW) | 60.1 s | 26.7 s (−55.6%) | **23.8 s** (−60.5%) | 48.1 → 11.8 s | 1.79 → 1.37 | 88 / 4 / 9% |
+| Police car (NS) | 24.8 s | 25.4 s (+2.3%) | **21.6 s** (−13.0%) | 13.8 → 10.6 s | 1.46 → 1.31 | 59 / 10 / 31% |
+| Fire engine (EW) | 62.3 s | 28.5 s (−54.2%) | **25.7 s** (−58.7%) | 49.3 → 12.7 s | 1.81 → 1.50 | 88 / 3 / 10% |
 
-### 6.4 Figures (generated in `outputs/`)
+By scenario, travel time in seconds (fixed-time / RL with no rule / RL + corridor):
 
-- `comparison_kpis.png` — waiting time / queue / throughput, all controllers × densities.
+| Vehicle | Low | Medium | High | Rush | Surge |
+|---|---:|---:|---:|---:|---:|
+| Ambulance | 26.2 / 20.5 / 19.8 | 31.8 / 23.2 / 21.5 | 75.8 / 31.0 / 26.6 | 128.6 / 35.1 / 28.9 | 38.1 / 23.7 / 22.1 |
+| Police car | 22.2 / 23.4 / 19.8 | 23.7 / 23.1 / 20.4 | 26.7 / 27.8 / 22.9 | 27.2 / 28.3 / 23.5 | 24.1 / 24.2 / 21.3 |
+| Fire engine | 27.7 / 22.2 / 21.5 | 33.6 / 24.9 / 23.1 | 78.5 / 33.0 / 28.7 | 131.4 / 37.2 / 31.6 | 40.1 / 25.4 / 23.7 |
+
+What the policy learned: on the arterial, the agents alone get the ambulance and the fire
+engine through in less than half of fixed-time's time, within about 3 s of what the corridor
+rule achieves. On the side street they do not: the police car is slightly slower than under
+fixed-time without the rule (four of five scenarios), because the agents give the side street
+less green than fixed-time's even split. With the corridor every type is faster under RL in
+every scenario (the pass condition of the evaluation); for the police car that lead is the
+rule's, and it depends on the grids being pre-empted differently (§8, item 5).
+
+### 6.4 How much depends on the training run
+
+The same recipe, five training seeds, on the benchmark seeds
+(`outputs/study/model_study.md`, `python tools/model_study.py`):
+
+| Waiting time (s) | Low | Medium | High | Rush | Surge | Mean |
+|---|---:|---:|---:|---:|---:|---:|
+| Fixed-time | 26.0 | 33.9 | 70.1 | 122.8 | 40.6 | 58.7 |
+| Max-pressure | 18.3 | 22.7 | 33.9 | 43.3 | 25.8 | 28.8 |
+| RL, training seed 42 | 22.5 | 26.1 | 33.6 | 38.8 | 28.5 | 29.9 |
+| RL, training seed 43 | 20.0 | 24.1 | 33.6 | 40.7 | 26.4 | 29.0 |
+| RL, training seed 44 | 20.8 | 23.7 | 32.8 | 37.6 | 26.4 | 28.2 |
+| RL, training seed 45 (shipped) | 19.0 | 22.8 | 30.9 | 36.0 | 25.1 | 26.7 |
+| RL, training seed 46 | 22.7 | 22.3 | 30.7 | 36.5 | 25.1 | 27.5 |
+| **RL, mean of the five** | 21.0 | 23.8 | 32.3 | 37.9 | 26.3 | 28.3 |
+| RL, standard deviation | 1.6 | 1.4 | 1.4 | 1.9 | 1.4 | 1.2 |
+| Models below max-pressure | 0 of 5 | 1 of 5 | 5 of 5 | 5 of 5 | 2 of 5 | 3 of 5 |
+
+On the validation seeds the five models rank almost the same way (means 29.7, 28.2, 28.2, **26.7**,
+27.3 s for seeds 42–46, against 29.1 s for max-pressure), which is why seed 45 is shipped. The
+finding that survives every retrain is the one under congestion: all five models are below
+max-pressure at high and rush demand. At low demand none of the five beats max-pressure, and
+the average retrain is 2.7 s behind it.
+
+### 6.5 Ablation
+
+Three more models, each trained with seed 42 and one ingredient removed, compared with the
+full seed-42 model on the benchmark seeds (difference in seconds; one training run each):
+
+| Removed | Low | Medium | High | Rush | Surge | Mean |
+|---|---:|---:|---:|---:|---:|---:|
+| Per-phase pressure inputs | +2.3 | −1.8 | −0.5 | −0.6 | −0.5 | −0.2 |
+| Demand inputs (rate and trend) | +4.6 | +3.9 | +3.4 | +4.3 | +4.5 | +4.1 |
+| Emergency vehicles in training | −1.9 | −1.0 | +1.4 | +0.2 | −0.5 | −0.4 |
+
+Read against the 1.2–1.9 s standard deviation between retrains: the demand inputs clearly
+matter, at every demand level and not only in the surge. The per-phase pressure inputs do
+not show a reliable effect (they may help at low demand, +2.3 s without them, but that is
+within two standard deviations of one retrain). Training with emergency vehicles costs
+nothing measurable in waiting time; what it buys is §6.3.
+
+### 6.6 The same benchmark on SUMO
+
+`python run.py eval --backend sumo` repeats the 150 runs on SUMO 1.18 (libsumo) with the
+shipped model, which was trained on the built-in simulator only
+(`outputs/sumo/benchmark_summary.md`):
+
+| Scenario | Fixed | Max-Pressure | **RL** | RL − Max-Pressure (95 % CI) | Trips completed: Fixed / Max-Pressure / RL |
+|---|---:|---:|---:|---:|---:|
+| Low | 21.1 | 14.5 | **11.7** | −2.8 ± 0.9 | 781 / 783 / 785 |
+| Medium | 26.4 | 25.4 | **15.1** | −10.3 ± 2.3 | 1336 / 1327 / 1344 |
+| High | 45.3 | 37.9 | **22.1** | −15.8 ± 1.4 | 1949 / 1949 / 2012 |
+| Rush | 53.9 | 43.1 | **25.5** | −17.6 ± 1.4 | 2062 / 2113 / 2233 |
+| Surge | 30.5 | 27.6 | **16.8** | −10.8 ± 1.0 | 1262 / 1264 / 1265 |
+
+The policy transfers to the microscopic simulator without retraining and is ahead of both
+baselines in every scenario and seed. This is a second simulator, not a validation against
+real traffic, and it should be read with three reservations: SUMO's waiting time is time
+standing still and leaves out vehicles that cannot yet enter a full entry road (which makes
+the baselines look better than they are, not the agents); max-pressure is used as written,
+switching whenever the other phase has more pressure, which costs acceleration time on SUMO
+that the point-queue model does not charge; and SUMO is not part of CI (two runs here gave
+identical files). The emergency-clearance column of the SUMO summary comes from one ambulance
+per episode and was not analysed further.
+
+### 6.7 Figures (generated in `outputs/`)
+
+- `comparison_kpis.png` — waiting time / queue / throughput, all controllers × scenarios.
 - `rl_improvement.png` — RL % improvement over fixed-time with the 40–50% target band.
 - `emergency_clearance.png` — clearance time by controller.
 - `emergency/emergency_<type>.png` — each emergency type, RL against fixed-time on travel time,
   waiting time, stops and time to clear a junction (`python tools/emergency_eval.py`).
 - `training_curve.png` — waiting time vs training episode.
+- `docs/assets/results.svg` — the chart of the README (`python tools/make_results_svg.py`).
 
-### 6.5 Alignment with the proposal
+### 6.8 Alignment with the proposal
 
-The proposal targeted a **40–50% reduction** in waiting time and queue length. The RL
-controller **meets or exceeds** this in the high and rush regimes (48–61%), where congestion
-actually matters, and clearly improves the medium (28%) and lightly-loaded (16%) cases. The
-mean reduction across all densities is **≈38%**, reaching the promised band under load. This is reported
-honestly: at **low** density there is little congestion to remove, so the absolute benefit is
-small; and the near-optimal **max-pressure** baseline remains competitive — the RL policy
-matches it at high density and surpasses it at rush.
+The proposal targeted a **40–50% reduction** in waiting time and queue length against
+fixed-time. The RL controller exceeds it at high and rush demand (56% and 71%), is just under
+it in the surge (38%) and medium (33%) scenarios and below it at low demand (27%), where there
+is little congestion to remove; the mean over the five scenarios is **45%**. The fixed-time
+baseline is close to saturation at high and rush demand, so the large percentages there are
+partly the baseline's. The comparison that says more about the learned policy is the one with
+max-pressure: level in light traffic, 9% and 17% lower under congestion.
 
 ---
 
 ## 7. Discussion
 
+- **Where learning pays.** Max-pressure is myopic: it serves whichever phase has more
+  pressure now, and pays a 5 s clearance each time that changes. The agents switch less
+  often — at rush hour about 66 phase changes per junction in a 30-minute episode against
+  max-pressure's 90 — so less green is spent on clearances, which matters most when the
+  junction is near capacity.
+  In light traffic there is little to plan for, and a rule that simply serves the longer
+  queue is hard to beat.
+- **Demand inputs.** The ablation's clearest result is that the arrival rate and its trend
+  are worth about 4 s at every demand level: knowing how fast an approach is filling is
+  useful information even when demand is stationary.
 - **Coordination emerges.** With neighbour observations enabled, adjacent intersections
   tend to align their arterial greens. The live dashboard shows the phases of all four
   junctions side by side; a strict green-wave proof would need platoon-level trajectories,
@@ -260,52 +374,60 @@ matches it at high density and surpasses it at rush.
 - **Safety is structural, not learned.** Because the phase FSM enforces yellow + all-red
   clearance on every change, no learned policy — however exploratory — can command a
   conflicting green. This separates *optimisation* (the agent) from *safety* (the
-  environment). Two caveats in the FSM itself (`phases.py`, left unchanged because the
-  published numbers depend on it): it accepts a new request during amber / all-red, so a
-  policy can cancel a change mid-clearance and keep a side street waiting beyond
-  `max_green_s` (up to ~113 s observed); and greens after the first last one second longer
-  than configured.
+  environment). A change that has begun always completes (a request made during the clearance
+  is acted on from the next green), every green lasts between `min_green_s` and
+  `max_green_s`, and no phase waits more than `max_green_s` plus two clearances (70 s) for
+  its green; `tests/test_phases_safety.py` checks each of these.
+- **Emergency vehicles: learned on the arterial, ruled on the side street.** The reward terms
+  and the look-ahead flags are enough for the agents to open the arterial for an ambulance by
+  themselves. They are not enough to make the agents give up arterial green for a police car
+  on the side street; the corridor rule does that.
 - **Honest baselines.** Fixed-time uses a standard 30 s split (not crippled); max-pressure is
-  a strong, throughput-optimal reference. Beating fixed-time by ~38% on average (61% at rush)
-  against these baselines is a meaningful result.
+  a strong, throughput-optimal reference, and it is the one the conclusions are drawn against.
 
 ---
 
 ## 8. Limitations
 
-1. **Time-varying demand.** The current state has no explicit *demand-trend* feature, so a
-   greedy policy can be whipsawed by sharp within-episode surges. We therefore model rush hour
-   as *sustained* heavy demand. Adding a short-horizon arrival-rate estimate to the state is
-   expected to restore performance under surges (see Future Work).
-2. **Point-queue fidelity.** The built-in simulator is a store-and-forward model without
-   lane-changing or spill-back, and every published number comes from it (`eval.backend:
-   mini`). SUMO provides full microscopic dynamics; `python run.py eval --backend sumo`
-   repeats the benchmark there (into `outputs/sumo/`). On SUMO the shipped policy still beats
-   fixed-time clearly but loses to max-pressure at low and medium demand.
-3. **Grid scale.** Results are reported on a 2×2 grid for a fast, reliable demo; 3×3 is
-   supported via config but requires a full retrain.
-4. **Max-pressure gap at low and medium density.** At light and medium demand the analytic
-   max-pressure rule beats the learned policy (19.2 s vs 22.0 s, 22.5 s vs 24.8 s); RL draws
-   level at high demand (35.6 s each) and wins clearly at rush (43.9 s vs 50.5 s).
-5. **Training reproducibility.** Retraining with the same seeds is repeatable on one
-   machine but not across NumPy versions; the published results come from the single shipped
-   checkpoint, from which `run.py eval` regenerates them exactly. The trainer also treats the
-   episode time limit as a true terminal state.
-6. **Pre-emption differs between the grids.** The RL grid clears a green corridor along the
-   emergency vehicle's route; fixed-time and max-pressure pre-empt a junction once the vehicle
-   is queued at it (`emergency.corridor` in `config.yaml`). With the same preemption on both,
-   the police car on the side street would be slower under RL — by 24% with stop-line
-   preemption on both, 12% with a corridor on both — because the agents give the side street
-   less green; with the corridor on the RL grid only it is 8.9% faster on average. The
-   point-queue model also lets an emergency vehicle wait behind the queue ahead of it, and the
-   policy itself never sees an emergency in training, so its emergency flags and the
-   `w_emergency` bonus do not change what it does.
+1. **Light traffic.** At low and medium demand the shipped model only matches max-pressure,
+   and it is the best of five trained models there; the average retrain is 2.7 s (low) and
+   1.1 s (medium) behind max-pressure.
+2. **A selected model.** The shipped model was chosen among five on validation seeds. That is
+   ordinary model selection and the benchmark seeds were not used for it, but the spread
+   between retrains (standard deviation 1.2 s on the mean, §6.4) is the error bar that belongs
+   to any claim about the *method* rather than about this checkpoint.
+3. **Point-queue fidelity and scale.** The built-in simulator is a store-and-forward model
+   without lane-changing or spill-back, on a 2×2 grid, and every headline number comes from
+   it (`eval.backend: mini`). The SUMO run (§6.6) is encouraging but was not used for training
+   or tuning. A 3×3 grid is supported via config but requires a full retrain.
+4. **Fixed-time near saturation.** At high and rush demand fixed-time's east–west green can
+   discharge about 0.21 vehicles/s against 0.20–0.22 arriving, so its waiting time grows with
+   the episode length and the −56% / −71% are partly a property of the baseline.
+5. **Pre-emption differs between the grids, and the police car depends on it.** The RL grid
+   clears a green corridor along the emergency vehicle's route; fixed-time and max-pressure
+   pre-empt a junction once the vehicle is queued at it (`emergency.corridor` in
+   `config.yaml`). With the same preemption on both grids the police car, on the side street,
+   is slower under RL — by 1.4% with stop-line preemption on both, by 9.9% with a corridor on
+   both — and with no rule on the RL grid it is 2.3% slower than fixed-time. With the corridor
+   on the RL grid only it is 13.0% faster on average, and fixed-time still gets it through
+   first in 31% of the dispatches. The point-queue model also lets an emergency vehicle wait
+   behind the queue ahead of it.
+6. **Training reproducibility.** Retraining is repeatable on one machine and library stack
+   but not across NumPy / PyTorch builds; the published results come from the shipped
+   checkpoints, from which `run.py eval`, `tools/emergency_eval.py` and `tools/model_study.py`
+   regenerate them exactly.
+7. **One surge shape.** The time-varying scenario is a single Gaussian peak at a fixed time,
+   and it is part of the training curriculum; surges of other shapes or timings were not
+   tested.
 
 ---
 
 ## 9. Future Work
 
-- **Temporal demand features / recurrent state** (GRU) to handle time-varying rush surges.
+- **Closing the light-traffic gap** — for example a longer or better-tuned training run, or a
+  recurrent state (GRU) in place of the two running averages of the demand inputs.
+- **Other demand profiles** — several peaks, incidents, a peak the policy was not trained on.
+- **Training on SUMO**, now that the policy has been shown to transfer to it.
 - **CTDE upgrade** — the repository already includes a config-gated **QMIX** learner
   (`qmix.enabled: true`) for centralised-training / decentralised-execution coordination.
 - **Real-map import** via OSM for an actual Bengaluru junction.
@@ -320,12 +442,15 @@ matches it at high density and surpasses it at rush.
 ## 10. Conclusion
 
 The project delivers a complete, runnable multi-agent DRL traffic-signal controller that
-**adapts to live traffic, coordinates across intersections, prioritises emergency vehicles,
-and is rigorously benchmarked** against fixed-time and max-pressure baselines across four
-densities. It reaches the proposal's **40–50% waiting-time and queue reduction** target in the
-congested regimes it was aimed at (**48%** at high, **61%** at rush), with a **≈38%** mean across
-all four densities on identical traffic, and ships with a polished
-real-time dashboard for live demonstration — meeting every objective set for the project.
+adapts to live traffic, coordinates across intersections, makes way for emergency vehicles
+and is benchmarked against fixed-time and max-pressure baselines across five scenarios, ten
+seeds each, with confidence intervals, five independently trained models, an ablation and a
+run on SUMO. Against fixed-time it reaches the proposal's **40–50% waiting-time and queue
+reduction** target on average (**45%**) and exceeds it under congestion (**56%** at high,
+**71%** at rush demand). Against max-pressure, the stronger baseline, the result is narrower
+and is stated as such: **equal in light traffic, 9–17% better under congestion**, the latter
+in every seed and for every retrained model. It ships with a real-time dashboard for live
+demonstration.
 
 ---
 

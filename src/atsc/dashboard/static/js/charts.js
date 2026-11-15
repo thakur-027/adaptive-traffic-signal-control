@@ -5,8 +5,8 @@
 
 const RL = "#34d399";
 const TR = "#aab4c3";
-const GRID = "#1f2a44";
-const TICK = "#7f8ca5";
+const GRID = "#1c2535";
+const TICK = "#8b97ad";
 
 export const METRICS = {
   // indices inside each history point [e, rl wait, ft wait, rl queue, ft queue]
@@ -73,7 +73,7 @@ export class LineChart {
     const { rl, ft, unit, digits } = spec;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
-    const font = "11px Inter, ui-sans-serif, system-ui, sans-serif";
+    const font = "11px system-ui, -apple-system, Roboto, Arial, sans-serif";
     ctx.font = font;
     const x0 = 30, x1 = w - 56, yt = 10, yb = h - 22;
     if (x1 - x0 < 40 || yb - yt < 30) return;
@@ -141,7 +141,7 @@ export class LineChart {
       if (gap > bestGap) { bestGap = gap; best = i; }
     }
     if (best >= 0 && bestGap > 22) {
-      ctx.font = "600 10.5px Inter, ui-sans-serif, system-ui, sans-serif";
+      ctx.font = "600 10.5px system-ui, -apple-system, Roboto, Arial, sans-serif";
       ctx.fillStyle = "#7ef0c4"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
       const gx = clamp(X(pts[best][0]), x0 + 50, x1 - 50);
       ctx.fillText(spec.gap, gx, (Y(pts[best][rl]) + Y(pts[best][ft])) / 2);
@@ -149,9 +149,9 @@ export class LineChart {
 
     // end dots + values
     const last = pts[pts.length - 1];
-    const ends = [[last[rl], RL, "#34d399"], [last[ft], TR, "#d5dbe5"]].sort((a, b) => b[0] - a[0]);
+    const ends = [[last[rl], RL, "#34d399"], [last[ft], TR, "#d7dde7"]].sort((a, b) => b[0] - a[0]);
     let prevY = -1e9;
-    ctx.font = "700 11.5px Inter, ui-sans-serif, system-ui, sans-serif";
+    ctx.font = "700 11.5px system-ui, -apple-system, Roboto, Arial, sans-serif";
     ctx.textAlign = "left"; ctx.textBaseline = "middle";
     for (const [v, color, ink] of ends) {
       const yDot = Y(v);
@@ -170,24 +170,24 @@ export class LineChart {
       let k = 0;
       for (let i = 1; i < pts.length; i++) if (Math.abs(pts[i][0] - ex) < Math.abs(pts[k][0] - ex)) k = i;
       const p = pts[k], x = X(p[0]);
-      ctx.strokeStyle = "#55627c"; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
+      ctx.strokeStyle = "#5b6a86"; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(x, yt); ctx.lineTo(x, yb); ctx.stroke(); ctx.setLineDash([]);
       for (const [v, color] of [[p[ft], TR], [p[rl], RL]]) {
-        ctx.fillStyle = color; ctx.strokeStyle = "#0f1628"; ctx.lineWidth = 2;
+        ctx.fillStyle = color; ctx.strokeStyle = "#0e131d"; ctx.lineWidth = 2;
         ctx.beginPath(); ctx.arc(x, Y(v), 4.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
       }
       const lines = [`Minute ${(p[0] / 60).toFixed(p[0] % 60 ? 1 : 0)}`,
                      `RL Agent System  ${p[rl].toFixed(digits)}${unit}`,
                      `Traditional  ${p[ft].toFixed(digits)}${unit}`];
-      ctx.font = "600 11.5px Inter, ui-sans-serif, system-ui, sans-serif";
+      ctx.font = "600 11.5px system-ui, -apple-system, Roboto, Arial, sans-serif";
       const bw = Math.max(...lines.map((s) => ctx.measureText(s).width)) + 30, bh = 58;
       const bx = x + 10 + bw < x1 ? x + 10 : x - 10 - bw;
       const by = Math.max(yt, Math.min(yb - bh, (Y(p[rl]) + Y(p[ft])) / 2 - bh / 2));
-      ctx.fillStyle = "#0b1222"; ctx.strokeStyle = "#334160"; ctx.lineWidth = 1;
+      ctx.fillStyle = "#1b2434"; ctx.strokeStyle = "#40506c"; ctx.lineWidth = 1;
       roundRect(ctx, bx, by, bw, bh, 8); ctx.fill(); ctx.stroke();
       ctx.textAlign = "left"; ctx.textBaseline = "middle";
-      ctx.fillStyle = "#e6ebf3"; ctx.fillText(lines[0], bx + 10, by + 14);
-      ctx.font = "11px Inter, ui-sans-serif, system-ui, sans-serif";
+      ctx.fillStyle = "#e9edf5"; ctx.fillText(lines[0], bx + 10, by + 14);
+      ctx.font = "11px system-ui, -apple-system, Roboto, Arial, sans-serif";
       [[lines[1], RL], [lines[2], TR]].forEach(([text, color], i) => {
         const y = by + 31 + i * 15;
         ctx.fillStyle = color; ctx.beginPath(); ctx.arc(bx + 14, y, 3.5, 0, Math.PI * 2); ctx.fill();

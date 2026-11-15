@@ -95,6 +95,7 @@ def record(url: str, frames_dir: Path, warm_s: float, speed: float, max_s: float
         page.click("#emSend")                          # choose the vehicle first: the menu
         page.click("#emMenu [data-kind=ambulance]")
         wait_until(page, "() => document.getElementById('tracker').classList.contains('on')", 10)
+        page.evaluate("() => window.scrollTo(0, 0)")   # the scripted click may have scrolled the page
         tracker_bottom = "() => document.getElementById('tracker').getBoundingClientRect().bottom"
         bottom = page.evaluate(tracker_bottom)     # the panel's lowest edge over the recording
 
@@ -157,7 +158,7 @@ def main(argv=None) -> int:
     ap.add_argument("--python", default=sys.executable, help="interpreter that runs the server")
     ap.add_argument("--width", type=int, default=960)
     ap.add_argument("--fps", type=int, default=15)
-    ap.add_argument("--warm", type=float, default=600.0, help="simulated seconds before recording")
+    ap.add_argument("--warm", type=float, default=300.0, help="simulated seconds before recording")
     ap.add_argument("--speed", type=float, default=1.0, help="speed when the ambulance is sent")
     ap.add_argument("--hold", type=float, default=2.8, help="seconds the last frame is held")
     ap.add_argument("--pause-hold", type=float, default=1.6,

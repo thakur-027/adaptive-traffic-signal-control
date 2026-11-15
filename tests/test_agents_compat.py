@@ -23,10 +23,16 @@ def _cfg(cfg, **changes):
 def test_shipped_checkpoint_loads_with_the_shipped_config(cfg):
     ctrl = RLController(cfg, build_topology(cfg))
     assert ctrl.metadata.get("algo") == "double_dueling_dqn"
+    # the checkpoint records the observation it was trained with, and it is the config's
+    for key in ("neighbor_obs", "pressure_obs", "demand_obs", "emergency_lookahead"):
+        assert ctrl.metadata.get(key) is bool(cfg.rl[key]), key
+    assert ctrl.metadata.get("obs_dim") == 33 and ctrl.metadata.get("seed") == cfg.seed
 
 
 @pytest.mark.parametrize("dotted, value, fragment", [
     ("rl.neighbor_obs", False, "rl.neighbor_obs"),
+    ("rl.pressure_obs", False, "rl.pressure_obs"),
+    ("rl.demand_obs", False, "rl.demand_obs"),
     ("rl.share_parameters", False, "rl.share_parameters"),
     ("rl.hidden_sizes", [64, 64], "rl.hidden_sizes"),
 ])

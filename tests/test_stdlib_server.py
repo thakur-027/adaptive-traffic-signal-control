@@ -69,6 +69,27 @@ def test_commands(server):
     assert _req(server, "POST", "/elsewhere", b"{}")[0] == 404
 
 
+def test_surge_traffic_level(server):
+    """The fifth traffic level works over polling too, and the previous one comes back."""
+    hello = json.loads(_req(server, "GET", "/api/hello")[2])
+    assert [name for name, _d in hello["scen"]][-1] == "surge"
+    before = json.loads(_req(server, "GET", "/healthz")[2])["scenario"]
+    post = lambda name: _req(server, "POST", "/api/cmd", json.dumps({"a": "scenario", "v": name}),  # noqa: E731
+                             {"Content-Type": "application/json"})
+    try:
+        ok = post("surge")
+        assert ok[0] == 200 and json.loads(ok[2]) == {"ok": True}
+        for _ in range(100):
+            if json.loads(_req(server, "GET", "/api/state")[2]).get("sc") == "surge":
+                break
+            threading.Event().wait(0.05)
+        else:
+            raise AssertionError("the race never switched to surge")
+        assert json.loads(_req(server, "GET", "/healthz")[2])["scenario"] == "surge"
+    finally:
+        assert post(before)[0] == 200
+
+
 @pytest.mark.parametrize("path", ["/static/../asgi.py", "/static/%2e%2e/config.yaml",
                                   "/static/js/../../server.py", "/static/..%2f..%2fconfig.yaml",
                                   "/static/", "/nope", "/ws"])

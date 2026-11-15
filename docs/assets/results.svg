@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 430" width="1200" height="430"
-     role="img" aria-label="Average waiting time per vehicle on a 2x2 grid, 1800-second episodes, mean of three seeds. Fixed-time, max-pressure and the RL agents across four demand levels. The agents cut waiting time by 16 percent at light demand and 61 percent at rush hour, where fixed-time reaches 113.0 seconds and the agents 43.9.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 452" width="1200" height="452"
+     role="img" aria-label="Average waiting time per vehicle on a 2x2 grid, 1800-second episodes, mean of 10 seeds. Fixed-time, max-pressure and the RL agents across 5 demand levels. Against fixed-time the agents cut waiting time by 27 percent at low demand and 71 percent at rush, where fixed-time reaches 122.8 seconds and the agents 36.0. Against max-pressure the change is plus 3.4 % at low, plus 0.4 % at medium, minus 8.9 % at high, minus 16.9 % at rush, minus 2.9 % at surge.">
   <title>Measured benchmark: waiting time by controller and demand</title>
   <defs>
     <linearGradient id="abg" x1="0" y1="0" x2="1" y2="1">
@@ -16,74 +16,91 @@
       <stop offset="1" stop-color="#16a34a"/>
     </linearGradient>
   </defs>
-  <rect width="1200" height="430" rx="20" fill="url(#abg)"/>
-  <rect width="1200" height="430" rx="20" fill="url(#grid)"/>
-  <rect x="0.5" y="0.5" width="1199" height="429" rx="20" fill="none" stroke="#ffffff" stroke-opacity="0.09"/>
+  <rect width="1200" height="452" rx="20" fill="url(#abg)"/>
+  <rect width="1200" height="452" rx="20" fill="url(#grid)"/>
+  <rect x="0.5" y="0.5" width="1199" height="451" rx="20" fill="none" stroke="#ffffff" stroke-opacity="0.09"/>
   <g font-family="Segoe UI, Helvetica Neue, Helvetica, Arial, sans-serif">
   <rect x="40" y="40" width="4" height="14" rx="2" fill="#34d399"/>
-  <text x="54" y="52" font-size="11.5" font-weight="700" fill="#93a3c4" textLength="325" lengthAdjust="spacing">BENCHMARK · AVERAGE WAITING TIME PER VEHICLE</text>
-  <rect x="904.809" y="41" width="11" height="11" rx="3" fill="#475569"/>
-  <text x="921.809" y="51" font-size="10" fill="#9fb0d0" textLength="46" lengthAdjust="spacing">fixed-time</text>
-  <rect x="990.195" y="41" width="11" height="11" rx="3" fill="#38bdf8"/>
-  <text x="1007.2" y="51" font-size="10" fill="#9fb0d0" textLength="65" lengthAdjust="spacing">max-pressure</text>
-  <rect x="1094.62" y="41" width="11" height="11" rx="3" fill="url(#rlbar)"/>
-  <text x="1111.62" y="51" font-size="10" fill="#9fb0d0" textLength="48" lengthAdjust="spacing">RL agents</text>
-  <text x="40" y="74" font-size="10" fill="#7f90b3" textLength="522" lengthAdjust="spacing">2 × 2 grid · 1800 s episodes · mean of seeds 0, 1, 2 · lower is better · chips show the RL cut against fixed-time</text>
-  <path d="M96 288H1160" stroke="#ffffff" stroke-opacity="0.06" stroke-width="1"/>
-  <path d="M96 232H1160" stroke="#ffffff" stroke-opacity="0.06" stroke-width="1"/>
-  <path d="M96 176H1160" stroke="#ffffff" stroke-opacity="0.06" stroke-width="1"/>
-  <path d="M96 120H1160" stroke="#ffffff" stroke-opacity="0.06" stroke-width="1"/>
+  <text x="54" y="52" font-size="11.5" font-weight="700" fill="#93a3c4" letter-spacing="0.6">BENCHMARK · AVERAGE WAITING TIME PER VEHICLE</text>
+  <text x="1106" y="51" font-size="10" fill="#9fb0d0">RL agents</text>
+  <rect x="1089" y="41" width="11" height="11" rx="3" fill="url(#rlbar)"/>
+  <text x="997" y="51" font-size="10" fill="#9fb0d0">max-pressure</text>
+  <rect x="980" y="41" width="11" height="11" rx="3" fill="#38bdf8"/>
+  <text x="900" y="51" font-size="10" fill="#9fb0d0">fixed-time</text>
+  <rect x="883" y="41" width="11" height="11" rx="3" fill="#475569"/>
+  <text x="40" y="74" font-size="10" fill="#7f90b3">2 × 2 grid · 1800 s episodes · mean of 10 runs (seeds 0–9) · lower is better · chips: RL against fixed-time</text>
+  <text x="84" y="347.5" font-size="9.5" fill="#7f90b3" text-anchor="end">0</text>
+  <path d="M96 299.2H1160" stroke="#ffffff" stroke-opacity="0.06" stroke-width="1"/>
+  <text x="84" y="302.7" font-size="9.5" fill="#7f90b3" text-anchor="end">30</text>
+  <path d="M96 254.4H1160" stroke="#ffffff" stroke-opacity="0.06" stroke-width="1"/>
+  <text x="84" y="257.9" font-size="9.5" fill="#7f90b3" text-anchor="end">60</text>
+  <path d="M96 209.6H1160" stroke="#ffffff" stroke-opacity="0.06" stroke-width="1"/>
+  <text x="84" y="213.1" font-size="9.5" fill="#7f90b3" text-anchor="end">90</text>
+  <path d="M96 164.8H1160" stroke="#ffffff" stroke-opacity="0.06" stroke-width="1"/>
+  <text x="84" y="168.3" font-size="9.5" fill="#7f90b3" text-anchor="end">120</text>
+  <path d="M96 120.0H1160" stroke="#ffffff" stroke-opacity="0.06" stroke-width="1"/>
+  <text x="84" y="123.5" font-size="9.5" fill="#7f90b3" text-anchor="end">150 s</text>
   <path d="M96 344H1160" stroke="#2c3d5f" stroke-width="1.4"/>
-  <text x="84" y="347.5" font-size="9.5" fill="#7f90b3" text-anchor="end" textLength="6" lengthAdjust="spacing">0</text>
-  <text x="84" y="291.5" font-size="9.5" fill="#7f90b3" text-anchor="end" textLength="11" lengthAdjust="spacing">30</text>
-  <text x="84" y="235.5" font-size="9.5" fill="#7f90b3" text-anchor="end" textLength="11" lengthAdjust="spacing">60</text>
-  <text x="84" y="179.5" font-size="9.5" fill="#7f90b3" text-anchor="end" textLength="11" lengthAdjust="spacing">90</text>
-  <text x="84" y="123.5" font-size="9.5" fill="#7f90b3" text-anchor="end" textLength="25" lengthAdjust="spacing">120 s</text>
-  <path d="M229 112V291" stroke="#22c55e" stroke-opacity="0.22" stroke-width="1" stroke-dasharray="2 5"/>
-  <rect x="185.0" y="84" width="88" height="26" rx="9" fill="#22c55e" fill-opacity="0.13" stroke="#22c55e" stroke-opacity="0.4"/>
-  <text x="229" y="103" font-size="14.5" font-weight="700" fill="#34d399" text-anchor="middle" textLength="57" lengthAdjust="spacing">−16.2 %</text>
-  <path d="M495 112V285" stroke="#22c55e" stroke-opacity="0.22" stroke-width="1" stroke-dasharray="2 5"/>
-  <rect x="451.0" y="84" width="88" height="26" rx="9" fill="#22c55e" fill-opacity="0.13" stroke="#22c55e" stroke-opacity="0.4"/>
-  <text x="495" y="103" font-size="14.5" font-weight="700" fill="#34d399" text-anchor="middle" textLength="57" lengthAdjust="spacing">−27.6 %</text>
-  <path d="M761 112V261" stroke="#22c55e" stroke-opacity="0.22" stroke-width="1" stroke-dasharray="2 5"/>
-  <rect x="717.0" y="84" width="88" height="26" rx="9" fill="#22c55e" fill-opacity="0.13" stroke="#22c55e" stroke-opacity="0.4"/>
-  <text x="761" y="103" font-size="14.5" font-weight="700" fill="#34d399" text-anchor="middle" textLength="57" lengthAdjust="spacing">−48.2 %</text>
-  <path d="M1027 112V233" stroke="#22c55e" stroke-opacity="0.22" stroke-width="1" stroke-dasharray="2 5"/>
-  <rect x="983.0" y="84" width="88" height="26" rx="9" fill="#22c55e" fill-opacity="0.13" stroke="#22c55e" stroke-opacity="0.4"/>
-  <text x="1027" y="103" font-size="14.5" font-weight="700" fill="#34d399" text-anchor="middle" textLength="57" lengthAdjust="spacing">−61.1 %</text>
-  <rect x="131" y="294.9" width="56" height="49.1" rx="4" fill="#475569"/>
-  <text x="159" y="287.919" font-size="9.5" fill="#9fb0d0" text-anchor="middle" textLength="20" lengthAdjust="spacing">26.3</text>
-  <rect x="201" y="308.1" width="56" height="35.9" rx="4" fill="#38bdf8"/>
-  <text x="229" y="301.115" font-size="9.5" fill="#9fb0d0" text-anchor="middle" textLength="20" lengthAdjust="spacing">19.2</text>
-  <rect x="271" y="302.9" width="56" height="41.1" rx="4" fill="url(#rlbar)"/>
-  <text x="299" y="295.893" font-size="9.5" font-weight="700" fill="#f1f5fd" text-anchor="middle" textLength="20" lengthAdjust="spacing">22.0</text>
-  <text x="229" y="362" font-size="12" font-weight="700" fill="#f1f5fd" text-anchor="middle" textLength="21" lengthAdjust="spacing">low</text>
-  <text x="229" y="376" font-size="9" fill="#7f90b3" text-anchor="middle" textLength="53" lengthAdjust="spacing">arrival ×0.35</text>
-  <rect x="397" y="279.9" width="56" height="64.1" rx="4" fill="#475569"/>
-  <text x="425" y="272.918" font-size="9.5" fill="#9fb0d0" text-anchor="middle" textLength="20" lengthAdjust="spacing">34.3</text>
-  <rect x="467" y="302.0" width="56" height="42.0" rx="4" fill="#38bdf8"/>
-  <text x="495" y="294.967" font-size="9.5" fill="#9fb0d0" text-anchor="middle" textLength="20" lengthAdjust="spacing">22.5</text>
-  <rect x="537" y="297.6" width="56" height="46.4" rx="4" fill="url(#rlbar)"/>
-  <text x="565" y="290.621" font-size="9.5" font-weight="700" fill="#f1f5fd" text-anchor="middle" textLength="20" lengthAdjust="spacing">24.8</text>
-  <text x="495" y="362" font-size="12" font-weight="700" fill="#f1f5fd" text-anchor="middle" textLength="49" lengthAdjust="spacing">medium</text>
-  <text x="495" y="376" font-size="9" fill="#7f90b3" text-anchor="middle" textLength="53" lengthAdjust="spacing">arrival ×0.60</text>
-  <rect x="663" y="215.8" width="56" height="128.2" rx="4" fill="#475569"/>
-  <text x="691" y="208.842" font-size="9.5" fill="#9fb0d0" text-anchor="middle" textLength="20" lengthAdjust="spacing">68.7</text>
-  <rect x="733" y="277.6" width="56" height="66.4" rx="4" fill="#38bdf8"/>
-  <text x="761" y="270.612" font-size="9.5" fill="#9fb0d0" text-anchor="middle" textLength="20" lengthAdjust="spacing">35.6</text>
-  <rect x="803" y="277.6" width="56" height="66.4" rx="4" fill="url(#rlbar)"/>
-  <text x="831" y="270.612" font-size="9.5" font-weight="700" fill="#f1f5fd" text-anchor="middle" textLength="20" lengthAdjust="spacing">35.6</text>
-  <text x="761" y="362" font-size="12" font-weight="700" fill="#f1f5fd" text-anchor="middle" textLength="27" lengthAdjust="spacing">high</text>
-  <text x="761" y="376" font-size="9" fill="#7f90b3" text-anchor="middle" textLength="53" lengthAdjust="spacing">arrival ×0.90</text>
-  <rect x="929" y="133.1" width="56" height="210.9" rx="4" fill="#475569"/>
-  <text x="957" y="126.069" font-size="9.5" fill="#9fb0d0" text-anchor="middle" textLength="25" lengthAdjust="spacing">113.0</text>
-  <rect x="999" y="249.7" width="56" height="94.3" rx="4" fill="#38bdf8"/>
-  <text x="1027" y="242.655" font-size="9.5" fill="#9fb0d0" text-anchor="middle" textLength="20" lengthAdjust="spacing">50.5</text>
-  <rect x="1069" y="262.0" width="56" height="82.0" rx="4" fill="url(#rlbar)"/>
-  <text x="1097" y="255.003" font-size="9.5" font-weight="700" fill="#f1f5fd" text-anchor="middle" textLength="20" lengthAdjust="spacing">43.9</text>
-  <text x="1027" y="362" font-size="12" font-weight="700" fill="#f1f5fd" text-anchor="middle" textLength="28" lengthAdjust="spacing">rush</text>
-  <text x="1027" y="376" font-size="9" fill="#7f90b3" text-anchor="middle" textLength="53" lengthAdjust="spacing">arrival ×1.00</text>
-  <rect x="40" y="390" width="1120" height="26" rx="8" fill="#ffffff" fill-opacity="0.05" stroke="#ffffff" stroke-opacity="0.1"/>
-  <text x="600" y="407" font-size="10" fill="#7f90b3" text-anchor="middle" textLength="886" lengthAdjust="spacing">queue length falls by the same 16–61 % · throughput +7.7 % at rush · emergency clearance 4.5× faster at rush (113.7 s → 25.3 s) · every number from outputs/benchmark_summary.md</text>
+  <path d="M202 112V283" stroke="#22c55e" stroke-opacity="0.22" stroke-width="1" stroke-dasharray="2 5"/>
+  <rect x="158.4" y="84" width="88" height="26" rx="9" fill="#22c55e" fill-opacity="0.13" stroke="#22c55e" stroke-opacity="0.4"/>
+  <text x="202" y="103" font-size="14.5" font-weight="700" fill="#34d399" text-anchor="middle">−27.2 %</text>
+  <rect x="122.4" y="305.1" width="48" height="38.9" rx="4" fill="#475569"/>
+  <text x="146.4" y="298.1" font-size="9.5" fill="#9fb0d0" text-anchor="middle">26.0</text>
+  <rect x="178.4" y="316.6" width="48" height="27.4" rx="4" fill="#38bdf8"/>
+  <text x="202.4" y="309.6" font-size="9.5" fill="#9fb0d0" text-anchor="middle">18.3</text>
+  <rect x="234.4" y="315.7" width="48" height="28.3" rx="4" fill="url(#rlbar)"/>
+  <text x="258.4" y="308.7" font-size="9.5" font-weight="700" fill="#f1f5fd" text-anchor="middle">19.0</text>
+  <text x="202" y="362" font-size="12" font-weight="700" fill="#f1f5fd" text-anchor="middle">low</text>
+  <text x="202" y="376" font-size="9" fill="#7f90b3" text-anchor="middle">arrival ×0.35</text>
+  <text x="202" y="396" font-size="10" fill="#fbbf24" text-anchor="middle">vs max-pressure +3.4 %</text>
+  <path d="M415 112V271" stroke="#22c55e" stroke-opacity="0.22" stroke-width="1" stroke-dasharray="2 5"/>
+  <rect x="371.2" y="84" width="88" height="26" rx="9" fill="#22c55e" fill-opacity="0.13" stroke="#22c55e" stroke-opacity="0.4"/>
+  <text x="415" y="103" font-size="14.5" font-weight="700" fill="#34d399" text-anchor="middle">−32.6 %</text>
+  <rect x="335.2" y="293.4" width="48" height="50.6" rx="4" fill="#475569"/>
+  <text x="359.2" y="286.4" font-size="9.5" fill="#9fb0d0" text-anchor="middle">33.9</text>
+  <rect x="391.2" y="310.0" width="48" height="34.0" rx="4" fill="#38bdf8"/>
+  <text x="415.2" y="303.0" font-size="9.5" fill="#9fb0d0" text-anchor="middle">22.7</text>
+  <rect x="447.2" y="309.9" width="48" height="34.1" rx="4" fill="url(#rlbar)"/>
+  <text x="471.2" y="302.9" font-size="9.5" font-weight="700" fill="#f1f5fd" text-anchor="middle">22.8</text>
+  <text x="415" y="362" font-size="12" font-weight="700" fill="#f1f5fd" text-anchor="middle">medium</text>
+  <text x="415" y="376" font-size="9" fill="#7f90b3" text-anchor="middle">arrival ×0.60</text>
+  <text x="415" y="396" font-size="10" fill="#fbbf24" text-anchor="middle">vs max-pressure +0.4 %</text>
+  <path d="M628 112V217" stroke="#22c55e" stroke-opacity="0.22" stroke-width="1" stroke-dasharray="2 5"/>
+  <rect x="584.0" y="84" width="88" height="26" rx="9" fill="#22c55e" fill-opacity="0.13" stroke="#22c55e" stroke-opacity="0.4"/>
+  <text x="628" y="103" font-size="14.5" font-weight="700" fill="#34d399" text-anchor="middle">−56.0 %</text>
+  <rect x="548.0" y="239.4" width="48" height="104.6" rx="4" fill="#475569"/>
+  <text x="572.0" y="232.4" font-size="9.5" fill="#9fb0d0" text-anchor="middle">70.1</text>
+  <rect x="604.0" y="293.4" width="48" height="50.6" rx="4" fill="#38bdf8"/>
+  <text x="628.0" y="286.4" font-size="9.5" fill="#9fb0d0" text-anchor="middle">33.9</text>
+  <rect x="660.0" y="297.9" width="48" height="46.1" rx="4" fill="url(#rlbar)"/>
+  <text x="684.0" y="290.9" font-size="9.5" font-weight="700" fill="#f1f5fd" text-anchor="middle">30.9</text>
+  <text x="628" y="362" font-size="12" font-weight="700" fill="#f1f5fd" text-anchor="middle">high</text>
+  <text x="628" y="376" font-size="9" fill="#7f90b3" text-anchor="middle">arrival ×0.90</text>
+  <text x="628" y="396" font-size="10" fill="#34d399" text-anchor="middle">vs max-pressure −8.9 %</text>
+  <path d="M841 112V139" stroke="#22c55e" stroke-opacity="0.22" stroke-width="1" stroke-dasharray="2 5"/>
+  <rect x="796.8" y="84" width="88" height="26" rx="9" fill="#22c55e" fill-opacity="0.13" stroke="#22c55e" stroke-opacity="0.4"/>
+  <text x="841" y="103" font-size="14.5" font-weight="700" fill="#34d399" text-anchor="middle">−70.7 %</text>
+  <rect x="760.8" y="160.6" width="48" height="183.4" rx="4" fill="#475569"/>
+  <text x="784.8" y="153.6" font-size="9.5" fill="#9fb0d0" text-anchor="middle">122.8</text>
+  <rect x="816.8" y="279.3" width="48" height="64.7" rx="4" fill="#38bdf8"/>
+  <text x="840.8" y="272.3" font-size="9.5" fill="#9fb0d0" text-anchor="middle">43.3</text>
+  <rect x="872.8" y="290.2" width="48" height="53.8" rx="4" fill="url(#rlbar)"/>
+  <text x="896.8" y="283.2" font-size="9.5" font-weight="700" fill="#f1f5fd" text-anchor="middle">36.0</text>
+  <text x="841" y="362" font-size="12" font-weight="700" fill="#f1f5fd" text-anchor="middle">rush</text>
+  <text x="841" y="376" font-size="9" fill="#7f90b3" text-anchor="middle">arrival ×1.00</text>
+  <text x="841" y="396" font-size="10" fill="#34d399" text-anchor="middle">vs max-pressure −16.9 %</text>
+  <path d="M1054 112V261" stroke="#22c55e" stroke-opacity="0.22" stroke-width="1" stroke-dasharray="2 5"/>
+  <rect x="1009.6" y="84" width="88" height="26" rx="9" fill="#22c55e" fill-opacity="0.13" stroke="#22c55e" stroke-opacity="0.4"/>
+  <text x="1054" y="103" font-size="14.5" font-weight="700" fill="#34d399" text-anchor="middle">−38.2 %</text>
+  <rect x="973.6" y="283.4" width="48" height="60.6" rx="4" fill="#475569"/>
+  <text x="997.6" y="276.4" font-size="9.5" fill="#9fb0d0" text-anchor="middle">40.6</text>
+  <rect x="1029.6" y="305.4" width="48" height="38.6" rx="4" fill="#38bdf8"/>
+  <text x="1053.6" y="298.4" font-size="9.5" fill="#9fb0d0" text-anchor="middle">25.8</text>
+  <rect x="1085.6" y="306.5" width="48" height="37.5" rx="4" fill="url(#rlbar)"/>
+  <text x="1109.6" y="299.5" font-size="9.5" font-weight="700" fill="#f1f5fd" text-anchor="middle">25.1</text>
+  <text x="1054" y="362" font-size="12" font-weight="700" fill="#f1f5fd" text-anchor="middle">surge</text>
+  <text x="1054" y="376" font-size="9" fill="#7f90b3" text-anchor="middle">arrival ×0.36 → ×0.96 → ×0.36</text>
+  <text x="1054" y="396" font-size="10" fill="#34d399" text-anchor="middle">vs max-pressure −2.9 %</text>
+  <text x="600" y="428" font-size="10" fill="#7f90b3" text-anchor="middle">Fixed-time is close to saturation at high and rush demand, so max-pressure is the fairer yardstick: the line under each group is the RL change against it.</text>
   </g>
 </svg>

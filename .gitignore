@@ -35,15 +35,20 @@ credentials.json
 scenarios/generated/
 *.log
 
-# outputs/ IS tracked on purpose: README.md, REPORT.md and docs/VIVA_MASTER.md quote
+# outputs/ IS tracked on purpose: README.md and REPORT.md quote
 # these exact CSVs/plots, so the published repo has to carry its own evidence.
-# Only throwaway artefacts are ignored: the --quick training log and curve, benchmarks on
-# other backends (run.py eval --backend sumo), and browser-check screenshots.
+# That includes outputs/sumo/ (the same benchmark on SUMO) and outputs/study/ (model
+# selection, training-to-training variation, ablation).
+# Only throwaway artefacts are ignored: the --quick training log and curve, a benchmark on
+# whichever backend "auto" picks, and browser-check screenshots.
 outputs/logs/train_quick.csv
 outputs/training_curve_quick.png
-outputs/sumo/
 outputs/auto/
 outputs/e2e/
+
+# Personal study notes for the project defence: kept on the author's machine, not published
+CHEATSHEET.md
+docs/VIVA_MASTER.md
 
 # Local-only artefacts: zips (share one through a GitHub Release instead) and the slide
 # deck (a submission artefact, handed in separately)
@@ -57,7 +62,8 @@ models/**/*.tmp
 # TensorBoard
 runs/
 
-# Do NOT ignore the shipped pretrained model:
+# Do NOT ignore the shipped pretrained model, nor the models of the model study
+# (models/seeds/: the five training seeds; models/ablation/: one ingredient removed each):
 !models/pretrained/
 !models/pretrained/**
 # ...except the few-minute models `run.py train --quick` writes next to it

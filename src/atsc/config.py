@@ -181,6 +181,17 @@ def validate_config(cfg: Config) -> None:
                                      or any(c not in known for c in corridor)):
             errors.append("  - emergency.corridor must be a list of controllers out of: "
                           + ", ".join(known))
+        unassisted = cfg.get_path("emergency.unassisted", None)
+        if unassisted is not None and (not isinstance(unassisted, list)
+                                       or any(c not in known for c in unassisted)):
+            errors.append("  - emergency.unassisted must be a list of controllers out of: "
+                          + ", ".join(known))
+        elif isinstance(unassisted, list) and isinstance(corridor, list) \
+                and set(unassisted) & set(corridor):
+            errors.append("  - a controller cannot be in both emergency.corridor and "
+                          "emergency.unassisted: "
+                          + ", ".join(sorted(set(unassisted) & set(corridor))))
+        _validate_learning(cfg, errors)
         _validate_dashboard(cfg, errors)
 
     if errors:
@@ -192,6 +203,47 @@ def validate_config(cfg: Config) -> None:
 
 def _is_number(v: Any) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool) and v == v
+
+
+def _validate_learning(cfg: Config, errors: List[str]) -> None:
+    """Checks for the observation switches, the reward, the demand curve and the lists of
+    scenarios and seeds (every key is optional; the defaults live where the key is read)."""
+    for key in ("neighbor_obs", "pressure_obs", "demand_obs", "emergency_lookahead"):
+        value = cfg.get_path(f"rl.{key}", None)
+        if value is not None and not isinstance(value, bool):
+            errors.append(f"  - rl.{key} must be true or false")
+    for dotted in ("reward.w_emergency", "reward.w_emergency_wait", "train.emergency_gap_s"):
+        value = cfg.get_path(dotted, None)
+        if value is not None and not (_is_number(value) and value >= 0):
+            errors.append(f"  - {dotted} must be a number >= 0")
+    eval_seeds = cfg.get_path("train.eval_seeds", None)
+    if eval_seeds is not None and not (isinstance(eval_seeds, int)
+                                       and not isinstance(eval_seeds, bool) and eval_seeds >= 1):
+        errors.append("  - train.eval_seeds must be a whole number >= 1")
+    center = cfg.get_path("demand.peak_center_s", None)
+    if center is not None and not (_is_number(center) and center >= 0):
+        errors.append("  - demand.peak_center_s must be a number >= 0")
+    width = cfg.get_path("demand.peak_width_s", None)
+    if width is not None and not (_is_number(width) and width > 0):
+        errors.append("  - demand.peak_width_s must be a number > 0")
+    scenarios = cfg.get_path("scenarios") or {}
+    for dotted in ("train.curriculum", "eval.scenarios"):
+        names = cfg.get_path(dotted, None)
+        if names is None:
+            continue
+        if not isinstance(names, list) or not names:
+            errors.append(f"  - {dotted} must be a non-empty list of scenario names")
+        else:
+            unknown = [n for n in names if n not in scenarios]
+            if unknown:
+                errors.append(f"  - {dotted} names unknown scenarios: "
+                              + ", ".join(str(n) for n in unknown))
+    seeds = cfg.get_path("eval.seeds", None)
+    if seeds is not None and (not isinstance(seeds, list) or not seeds or any(
+            not isinstance(s, int) or isinstance(s, bool) for s in seeds)):
+        errors.append("  - eval.seeds must be a non-empty list of whole numbers")
+    elif isinstance(seeds, list) and len(set(seeds)) != len(seeds):
+        errors.append("  - eval.seeds must not repeat a seed")
 
 
 def _validate_dashboard(cfg: Config, errors: List[str]) -> None:

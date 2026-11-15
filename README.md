@@ -18,18 +18,20 @@
   <img alt="PyTorch 2.2 with a NumPy fallback" src="https://img.shields.io/badge/PyTorch-2.2%20%C2%B7%20NumPy%20fallback-EE4C2C?logo=pytorch&logoColor=white">
   <img alt="SUMO optional" src="https://img.shields.io/badge/SUMO-optional-00A0A0">
   <a href="https://github.com/Adityakumar1805/adaptive-traffic-signal-control/actions/workflows/ci.yml"><img alt="CI: tests and benchmark reproduction" src="https://github.com/Adityakumar1805/adaptive-traffic-signal-control/actions/workflows/ci.yml/badge.svg?branch=main"></a>
-  <img alt="36 benchmark runs" src="https://img.shields.io/badge/benchmark-36%20runs-38bdf8">
+  <img alt="150 benchmark runs" src="https://img.shields.io/badge/benchmark-150%20runs-38bdf8">
   <img alt="MIT licence" src="https://img.shields.io/badge/licence-MIT-64748b">
 </p>
 
 </div>
 
 Four **Double + Dueling DQN** agents — one per junction of a 2 × 2 signalised grid — learn to
-cut average waiting time by **16 % at light demand and 61 % at rush hour** against a fixed-time
-controller. A safety finite-state machine makes conflicting greens impossible by construction,
-and the agents' green corridor gets an ambulance through the grid up to **4.5× faster** (rush
-hour) — every emergency type, ambulance, police car and fire engine, gets through faster on
-average than on the fixed-time grid.
+control the signals from what each junction can measure. Against a fixed-time controller they
+cut average waiting time by **27 % at light demand and 71 % at rush hour**. Against
+**max-pressure**, a strong adaptive rule, they are level at light and medium demand and
+**9 % and 17 % ahead at high and rush demand** (ten seeds, with confidence intervals). A
+safety finite-state machine makes conflicting greens impossible by construction. Emergency
+vehicles are part of training, so the agents make way for an ambulance by themselves, and a
+green-corridor rule on top gets it through the grid **4.4× faster** at rush hour.
 It runs on **SUMO** when SUMO is installed and on a **built-in point-queue simulator** when it
 isn't, and ships a live web dashboard that races the learned policy against the fixed-time
 baseline on the same traffic, arrival for arrival — drawn as Indian traffic (two-wheelers,
@@ -37,12 +39,12 @@ autos, e-rickshaws, buses, tractors…) driving on the left, with ambulances, po
 fire engines you can send in yourself and follow, junction by junction, on both grids.
 
 <p align="center">
-  <img src="docs/screenshots/dashboard_demo.gif" width="100%" alt="The live page at rush hour. The same four junctions run twice on identical traffic, the RL Agent System on the left and the Traditional Traffic System on the right, each with a line above it saying what the ambulance is doing on that grid. An ambulance chosen from the emergency menu enters both grids; the page drops to slow motion and says so at the top. The ambulance is circled on both maps with a label, the light it waits at is ringed and its route ahead is dashed; on the RL grid the junction ahead of it is ringed too, already switching for it. The tracker under the maps says which system has it further along. It gets through the RL grid while it is still in a long queue on the traditional one, and once it is through both the race pauses on the result: RL Agent System got it through 4.1 times faster, 1:51 sooner">
+  <img src="docs/screenshots/dashboard_demo.gif" width="100%" alt="The live page at rush hour. The same four junctions run twice on identical traffic, the RL Agent System on the left and the Traditional Traffic System on the right, each with a line above it saying what the ambulance is doing on that grid. An ambulance chosen from the emergency menu enters both grids; the page drops to slow motion and says so at the top. The ambulance is circled on both maps with a label, the light it waits at is ringed and its route ahead is dashed; on the RL grid the junction ahead of it is ringed too, already switching for it. The tracker under the maps says which system has it further along. It gets through the RL grid while it is still in a long queue on the traditional one, and once it is through both the race pauses on the result: RL Agent System got it through 4.4 times faster, 1:43 sooner">
   <br>
   <sub>The live page at rush hour. An ambulance is sent into both grids and the page plays in its automatic slow motion
-  (0.2×) until it is through, then pauses on the result. In this run it needs 36 simulated seconds to get through the RL
-  Agent System and 147 through the traditional one (1:51 sooner, 4.1× faster); over the benchmark's three seeds the
-  rush-hour figure is 4.5×. Recorded with <code>tools/record_gif.py --warm 560</code> and played 2.5× faster than recorded.</sub>
+  (0.2×) until it is through, then pauses on the result. In this run it needs 30 simulated seconds to get through the RL
+  Agent System and 133 through the traditional one (1:43 sooner, 4.4× faster), which is also the rush-hour average of the
+  emergency evaluation. Recorded with <code>tools/record_gif.py</code> and played 2.5× faster than recorded.</sub>
 </p>
 
 ```bash
@@ -83,66 +85,128 @@ host your own copy are in **[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)**.
 
 ## Measured results
 
-![Average waiting time per vehicle by controller and demand level: fixed-time, max-pressure and the RL agents across low, medium, high and rush demand, with the RL cut against fixed-time called out as -16.2, -27.6, -48.2 and -61.1 percent](docs/assets/results.svg)
+![Average waiting time per vehicle by controller and demand level: fixed-time, max-pressure and the RL agents at low, medium, high, rush and surge demand. Against fixed-time the RL agents are 27.2, 32.6, 56.0, 70.7 and 38.2 percent lower; against max-pressure they are 3.4 percent higher at low, 0.4 percent higher at medium, and 8.9, 16.9 and 2.9 percent lower at high, rush and surge](docs/assets/results.svg)
 
-Three controllers × four demand levels × three seeds = **36 runs**, every row in
-[`outputs/benchmark_results.csv`](outputs/benchmark_results.csv), aggregated in
-[`outputs/benchmark_summary.md`](outputs/benchmark_summary.md). Measured on the built-in
-point-queue simulator; the SUMO backend is implemented and unit-tested but was not used to
-produce these numbers.
+Three controllers × five demand levels × ten seeds = **150 runs** on the built-in simulator,
+every row in [`outputs/benchmark_results.csv`](outputs/benchmark_results.csv), aggregated in
+[`outputs/benchmark_summary.md`](outputs/benchmark_summary.md). Average waiting time per
+vehicle, in seconds:
 
-| Demand | Fixed-time | Max-pressure | **RL agents** | RL vs fixed-time |
-|---|---:|---:|---:|---:|
-| Low (arrival ×0.35) | 26.3 s | **19.2 s** | 22.0 s | −16.2 % |
-| Medium (×0.60) | 34.3 s | **22.5 s** | 24.8 s | −27.6 % |
-| High (×0.90) | 68.7 s | **35.6 s** | **35.6 s** | −48.2 % |
-| Rush (×1.00) | 113.0 s | 50.5 s | **43.9 s** | −61.1 % |
+| Demand | Fixed-time | Max-pressure | **RL agents** | RL vs fixed-time | RL vs max-pressure (95 % interval) | RL lower in |
+|---|---:|---:|---:|---:|---:|---:|
+| Low (arrival ×0.35) | 26.0 | **18.3** | 19.0 | −27.2 % | +0.6 ± 0.7 s | 2 of 10 seeds |
+| Medium (×0.60) | 33.9 | 22.7 | 22.8 | −32.6 % | +0.1 ± 0.9 s | 6 of 10 |
+| High (×0.90) | 70.1 | 33.9 | **30.9** | −56.0 % | **−3.0 ± 1.2 s** | 10 of 10 |
+| Rush (×1.00) | 122.8 | 43.3 | **36.0** | −70.7 % | **−7.3 ± 2.7 s** | 10 of 10 |
+| Surge (×0.36 → ×0.96 → ×0.36) | 40.6 | 25.8 | 25.1 | −38.2 % | −0.7 ± 0.9 s | 7 of 10 |
 
-Averaged over the four demand levels the agents remove **38 %** of the waiting time. The gain
-is smallest where there is least to win, and it is worth saying plainly that **max-pressure
-beats the agents at low and medium demand** (19.2 s and 22.5 s against 22.0 s and 24.8 s).
-The agents catch up under congestion: they draw level with max-pressure at high demand
-(35.6 s each, apart only in the fifth decimal) and win clearly at rush hour — 43.9 s against
-50.5 s, and 14.2 queued vehicles per junction against 16.3. Against fixed-time at rush they
-also clear **7.7 % more vehicles**.
+How to read it:
 
-Queue length falls in step with waiting time, −16.4 % to −61.3 %. The benchmark's ambulance
-gets through **1.4× faster at low demand and 4.5× faster at rush** (113.7 s → 25.3 s), the
-case that actually matters for an ambulance; every emergency type is measured on its own
-below.
+* **Against fixed-time** the agents are lower in every one of the 50 paired runs. The size of
+  the gap at high and rush demand says as much about fixed-time as about RL: its east–west
+  green is close to saturation there, so its queues grow without bound.
+* **Against max-pressure**, the fairer yardstick, the agents win under congestion — by
+  3.0 s at high and 7.3 s at rush demand, in every seed — and are level with it at low,
+  medium and surge demand, where the interval of the difference includes zero. At low demand
+  max-pressure is nominally ahead (18.3 s against 19.0 s). The project's claim is therefore:
+  **RL matches a strong rule in light traffic and beats it under congestion.**
+* **Surge** is the one time-varying scenario: within an episode the demand rises from light
+  traffic to rush-hour level and falls back. The agents see each approach's arrival rate and
+  its trend.
+
+Queue length moves in step with waiting time, and at rush hour the agents complete 9.6 % more
+trips than fixed-time. The full tables (queues, throughput, emergency clearance, seed-by-seed
+comparison) are in the benchmark summary and in [REPORT.md](REPORT.md) §5.
 
 <table>
 <tr>
-<td width="50%"><img alt="Grouped bar plots of average waiting time, average queue length and throughput for the three controllers across the four demand levels" src="outputs/comparison_kpis.png"></td>
+<td width="50%"><img alt="Grouped bar plots of average waiting time, average queue length and throughput for the three controllers across the five demand levels" src="outputs/comparison_kpis.png"></td>
 <td width="50%"><img alt="Percentage reduction of waiting time and queue length by the RL controller against fixed-time at each demand level, with the proposal's 40 to 50 percent target band shaded" src="outputs/rl_improvement.png"></td>
 </tr>
 </table>
 
-`python run.py eval` reruns all 36 episodes and overwrites both the CSVs and these plots.
+`python run.py eval` reruns all 150 episodes and overwrites both the CSVs and these plots.
 The random seeds are fixed, so a rerun reproduces the table above rather than something
 near it — [CI](.github/workflows/ci.yml) reruns it on every push, once with PyTorch and once
 with the NumPy network the hosted site uses, and fails if a single byte of the CSVs changes.
+
+### How much depends on the training run
+
+One trained model is one draw. The same recipe was therefore trained five times (training
+seeds 42–46). The shipped model is the one that was best on the **validation seeds 100–104**,
+which are neither training traffic nor benchmark seeds: training seed 45. On the benchmark
+seeds the five models give ([`outputs/study/model_study.md`](outputs/study/model_study.md)):
+
+| Waiting time (s) | Low | Medium | High | Rush | Surge | Mean |
+|---|---:|---:|---:|---:|---:|---:|
+| Max-pressure | 18.3 | 22.7 | 33.9 | 43.3 | 25.8 | 28.8 |
+| RL, shipped model (seed 45) | 19.0 | 22.8 | 30.9 | 36.0 | 25.1 | 26.7 |
+| RL, mean of the five models | 21.0 | 23.8 | 32.3 | 37.9 | 26.3 | 28.3 |
+| RL, lowest – highest | 19.0–22.7 | 22.3–26.1 | 30.7–33.6 | 36.0–40.7 | 25.1–28.5 | 26.7–29.9 |
+| Models below max-pressure | 0 of 5 | 1 of 5 | 5 of 5 | 5 of 5 | 2 of 5 | 3 of 5 |
+
+So the congestion result holds for every retrain, while the light-traffic result does not:
+**the average retrain is 2.7 s behind max-pressure at low demand and 1.1 s behind at medium**,
+and the shipped model is the best of the five at low demand. The same file has an ablation (one retrain each): removing
+the demand inputs costs about 4 s at every demand level; removing the per-phase pressure
+inputs or the emergency vehicles from training changes the mean by less than the spread
+between retrains. `python tools/model_study.py` regenerates all three tables from the shipped
+models, and CI checks that.
+
+### The same benchmark on SUMO
+
+`python run.py eval --backend sumo` runs the same 150 episodes on SUMO (1.18, libsumo). The
+model was trained on the built-in simulator only and is used unchanged
+([`outputs/sumo/benchmark_summary.md`](outputs/sumo/benchmark_summary.md)):
+
+| Waiting time on SUMO (s) | Low | Medium | High | Rush | Surge |
+|---|---:|---:|---:|---:|---:|
+| Fixed-time | 21.1 | 26.4 | 45.3 | 53.9 | 30.5 |
+| Max-pressure | 14.5 | 25.4 | 37.9 | 43.1 | 27.6 |
+| **RL agents** | **11.7** | **15.1** | **22.1** | **25.5** | **16.8** |
+
+On SUMO the agents are ahead of both baselines at every demand level and in every seed (about
+20 % to 42 % below max-pressure), and they complete more trips. Three cautions before
+reading much into that. The two simulators measure waiting differently: SUMO counts the time
+a vehicle stands still, and a vehicle that cannot enter because its entry road is full is not
+counted until it does, which flatters a controller that leaves the entries blocked (the
+baselines here, not the agents). The max-pressure rule is used as it is, switching whenever
+the other phase has more pressure; on SUMO every switch also costs acceleration time, which
+is a likely reason it does worse there than in the point-queue model. And SUMO is not part of
+CI, so these files are reproduced by hand (two runs here gave identical files). The headline
+numbers of this project remain the built-in simulator's.
 
 ### Emergency vehicles, type by type
 
 `python tools/emergency_eval.py` sends each emergency type — the ambulance and the fire engine
 along the east–west arterial, the police car down the north–south side street — into the
-traffic of both controllers at 25 moments of each of 40 episodes (four demand levels × seeds
-0–9), every time into its own copy of the running simulation: 1,000 matched dispatches per
-type. The RL grid clears a green corridor, the fixed-time grid pre-empts at the stop line.
-Pooled over every demand level:
+traffic of both controllers at 25 moments of each of 50 episodes (five demand levels × seeds
+0–9), every time into its own copy of the running simulation: 1,250 matched dispatches per
+type. Pooled over every demand level, travel time through the grid:
 
-| Vehicle | Travel time, fixed-time → RL | Waiting time | Stops | Time to clear a junction | RL faster / tie / slower |
-|---|---:|---:|---:|---:|---:|
-| Ambulance | 61.7 s → **24.5 s** (−60.4 %) | 49.7 s → 12.5 s | 1.78 → 1.54 | 24.8 s → 6.2 s | 85 / 3 / 11 % |
-| Police car | 22.9 s → **20.9 s** (−8.9 %) | 11.9 s → 9.9 s | 1.40 → 1.29 | 5.9 s → 4.9 s | 58 / 9 / 32 % |
-| Fire engine | 64.0 s → **26.3 s** (−58.9 %) | 51.0 s → 13.3 s | 1.80 → 1.66 | 25.5 s → 6.7 s | 85 / 3 / 11 % |
+| Vehicle | Fixed-time, stop-line rule | RL agents on their own, no rule | RL + green corridor (shipped) | RL + corridor: faster / tie / slower |
+|---|---:|---:|---:|---:|
+| Ambulance | 60.1 s | 26.7 s (−55.6 %) | **23.8 s** (−60.5 %) | 88 / 4 / 9 % |
+| Police car | 24.8 s | 25.4 s (+2.3 %) | **21.6 s** (−13.0 %) | 59 / 10 / 31 % |
+| Fire engine | 62.3 s | 28.5 s (−54.2 %) | **25.7 s** (−58.7 %) | 88 / 3 / 10 % |
 
-Every type is faster on the RL grid at every demand level. The police car is the close one:
-on the side street the agents give it less green and a longer queue than fixed-time's even
-split, and its lead comes from the corridor clearing the second junction before it arrives
-(see [Known limitations](#known-limitations)). The tables by demand level, the pass/fail
-check and the per-type charts are in
+Two things are being measured, and the table keeps them apart:
+
+* **What the agents learned.** Emergency vehicles are dispatched during training with no
+  rule attached; the reward pays for getting one through and charges for holding it, and the
+  observation flags the approach it is on or heading for. With no preemption rule at all the
+  agents get the ambulance and the fire engine through in less than half of fixed-time's
+  time — nearly as fast as with the corridor rule. They do **not** do that for the police
+  car: on the side street it is 2 % slower than under fixed-time, because the agents give the
+  side street less green than fixed-time's even split.
+* **What the shipped system does.** On top of the agents the RL grid clears a green corridor
+  (every junction still ahead of the vehicle requests its phase from the moment it is sent);
+  fixed-time pre-empts at the stop line, as a stand-alone signal would. With it every type is
+  faster on the RL grid at every demand level. For the police car that lead comes from the
+  rule, not from the learned policy, and it depends on the two grids being pre-empted
+  differently (see [Known limitations](#known-limitations)).
+
+The tables by demand level, the pass/fail check and the per-type charts are in
 [`outputs/emergency/emergency_results.md`](outputs/emergency/emergency_results.md); every
 dispatch is a row of `outputs/emergency/emergency_dispatches.csv`.
 
@@ -160,13 +224,13 @@ what is happening on that grid; everything else is under them — the emergency 
 live result, a chart of the run and three small tiles. It opens at rush hour, where the
 difference between the two systems is largest.
 
-![The whole page on a 1440-pixel-wide screen, paused on the result of an emergency test: the title and live status (paused on the result, 3 s), the controls in one row, the two 2x2 grids side by side with the average wait in each header and a line saying the ambulance is through in 0:31 on the RL grid and 2:22 on the traditional one; under them the tracker (RL Agent System got it through 4.6 times faster, 1:51 sooner), the live result (43.5 s against 80.6 s, 46 percent less waiting), the chart of the run, and the tiles for cars queued, trips completed and the emergency test](docs/screenshots/dashboard_desktop.png)
+![The whole page on a 1440-pixel-wide screen, paused on the result of an emergency test: the title and live status (paused on the result, 3 s), the controls in one row, the two 2x2 grids side by side with the average wait in each header and a line saying the ambulance is through in 0:26 on the RL grid and 2:32 on the traditional one; under them the tracker (RL Agent System got it through 5.8 times faster, 2:06 sooner), the live result (33.2 s against 74.3 s, 55 percent less waiting), the chart of the run, and the tiles for cars queued, trips completed and the emergency test](docs/screenshots/dashboard_desktop.png)
 
 | Control / panel | What it does |
 |---|---|
 | **The two maps** | The race itself. Each map's header gives that system's average wait at red lights; the line under it describes the system, or — while an emergency vehicle is on the road — says where that vehicle is on this grid (see below). On a laptop the maps are as big as the screen allows |
 | **Pause / Play · Restart** | Freeze or resume the run; Restart replays the same traffic from the start |
-| **Traffic** | Light / Normal / Heavy / Rush hour (the `low` / `medium` / `high` / `rush` scenarios) — restarts the run with those arrival rates. The page opens at Rush hour; the busier the roads, the bigger the difference |
+| **Traffic** | Light / Normal / Heavy / Rush hour / Surge (the `low` / `medium` / `high` / `rush` / `surge` scenarios) — restarts the run with those arrival rates; Surge rises from light traffic to rush-hour level around minute 10 and falls back. The page opens at Rush hour; the busier the roads, the bigger the difference |
 | **Speed** | A slider with six stops: 0.2× *very slow*, 0.5× *slow*, 1× *normal* (one 5 s decision per 200 ms tick, 25× real time), 2×, 4×, 8× *fastest* |
 | **Send emergency vehicle** | Opens the choice — ambulance (east–west), police car (north–south) or fire engine (east–west) — and sends it into *both* grids at once (**E** opens the same menu). A refused dispatch (four already on the road) is explained in a message |
 | **Slow motion and the pause on the result** | While an emergency vehicle is on the road the race plays at 0.2× so it can be followed, and the status at the top says *Slow motion until it is through*; choosing a speed yourself turns that off. Once a vehicle is through both grids the race stops for 5 s on the result, then carries on by itself (**Play** carries on at once) |
@@ -203,7 +267,7 @@ page answers it on the maps and in words, for every emergency vehicle on the roa
   reason, the junction counter, a progress bar along its route with the junctions it has
   crossed, the time since it was sent and the time it has stood in queues. Once it is through
   both grids it says which system got it through faster and by how much (*RL Agent System got
-  it through 4.6× faster · 1:51 sooner*), and it stays until you close it. **Timeline** (or
+  it through 5.8× faster · 2:06 sooner*), and it stays until you close it. **Timeline** (or
   **T**) lists every step with its time: sent, waiting at J1_0 and how far back, green
   requested, green light, crossed, out of the grid.
 
@@ -219,11 +283,11 @@ words always match the picture.
 
 <table>
 <tr>
-<td width="62%"><img alt="One ambulance sent into both grids at rush hour: on the RL grid it has crossed J1_0 and is circled on its way to J1_1, labelled Moving, with its route dashed and J1_1 ringed as pre-empted, its light already green for it; the line above says Driving to J1_1, junction 2 of 2. On the traditional grid it waits 29th in line at J1_0, too far back to be drawn, so a dashed ring marks the +24 badge of that queue; the line above says Green at J1_0, 28 vehicles ahead, clearing, junction 1 of 2" src="docs/screenshots/network_render_ambulance.png"></td>
-<td width="38%"><img alt="The timeline of the same ambulance on both grids: sent, waiting at J1_0, green requested, green light, crossed J1_0, waiting at J1_1, crossed J1_1, out of the grid - in 0:31 on the RL grid, where it is first in line at a green J1_1, and 2:22 on the traditional one, where it is 24th in line there" src="docs/screenshots/emergency_timeline.png"></td>
+<td width="62%"><img alt="One ambulance sent into both grids at rush hour: on the RL grid it has crossed J1_0 and is circled on its way to J1_1, labelled Moving, with its route dashed and J1_1 ringed as pre-empted, its light already green for it; the line above says Driving to J1_1, junction 2 of 2. On the traditional grid it is 26th in line at J1_0, too far back to be drawn, so a dashed ring marks the +16 badge of that queue; the line above says Green at J1_0, 25 vehicles ahead, clearing, junction 1 of 2" src="docs/screenshots/network_render_ambulance.png"></td>
+<td width="38%"><img alt="The timeline of the same ambulance on both grids: sent, waiting at J1_0, green requested, green light, crossed J1_0, waiting at J1_1, crossed J1_1, out of the grid - in 0:26 on the RL grid, where it is first in line at a green J1_1, and 2:32 on the traditional one, where it starts 33rd in line at J1_0 and is 24th in line at J1_1" src="docs/screenshots/emergency_timeline.png"></td>
 </tr>
 <tr>
-<td colspan="2"><img alt="The tracker once the ambulance is through both grids: RL Agent System got it through 4.6 times faster, 1:51 sooner; through in 0:31 on the RL grid (waited 0:18) and 2:22 on the traditional one (waited 2:08), both rows showing 2 of 2 junctions" src="docs/screenshots/emergency_result.png"></td>
+<td colspan="2"><img alt="The tracker once the ambulance is through both grids: RL Agent System got it through 5.8 times faster, 2:06 sooner; through in 0:26 on the RL grid (waited 0:13) and 2:32 on the traditional one (waited 2:18), both rows showing 2 of 2 junctions" src="docs/screenshots/emergency_result.png"></td>
 </tr>
 </table>
 
@@ -271,7 +335,7 @@ vehicles flash.
 
 </details>
 
-<p align="center"><img src="docs/screenshots/dashboard_phone.png" alt="The page on a phone: the title and the live status (slow motion until it is through), then the RL Agent System grid with its line saying the ambulance is moving, driving to J1_1, junction 2 of 2, and under it the traditional grid with its line saying green at J1_0, 17 vehicles ahead, junction 1 of 2; the controls sit in a bar at the bottom, where the Emergency button shows one vehicle on the road" width="300"></p>
+<p align="center"><img src="docs/screenshots/dashboard_phone.png" alt="The page on a phone: the title and the live status (slow motion until it is through), then the RL Agent System grid with its line saying the ambulance is moving, driving to J1_1, junction 2 of 2, and under it the traditional grid with its line saying green at J1_0, 22 vehicles ahead, clearing, junction 1 of 2; the controls sit in a bar at the bottom, where the Emergency button shows one vehicle on the road" width="300"></p>
 
 On a phone the two grids sit one under the other, each with its own line, and the controls
 move to a bar at the bottom; **Emergency** opens the same choice of vehicle.
@@ -286,24 +350,23 @@ nothing else.
 
 | | Fixed-time baseline | RL agents |
 |---|---|---|
-| Decides by | a clock: 30 s of NS, then 30 s of EW, forever | a 23-number observation, re-read every 5 s |
-| Sees | nothing | its own 4 queues and waits, its phase, green-so-far, 4 emergency flags, and its neighbours' pressures and phases |
-| Coordinates | not at all | through those neighbour features — no central controller, no message passing |
-| Reacts to a surge | on the next scheduled turn | on the next 5 s decision |
-| Reacts to an ambulance | stop-line preemption: a junction switches once the vehicle waits at it | a green corridor: every junction still ahead of the vehicle switches from the moment it is sent (the four emergency flags and the reward bonus do nothing on their own — training never sends one) |
-| Waiting time at rush | 113.0 s | **43.9 s** |
+| Decides by | a clock: 30 s of NS, then 30 s of EW, forever | a 33-number observation, re-read every 5 s |
+| Sees | nothing | its own 4 queues and waits, its phase, green-so-far, 4 emergency flags, its neighbours' pressures and phases, the pressure of each of its phases, and the arrival rate and trend on each approach |
+| Coordinates | not at all | through the neighbour features — no central controller, no message passing |
+| Reacts to a surge | on the next scheduled turn | on the next 5 s decision, and it sees the arrival rate rising before the queue has formed |
+| Reacts to an ambulance | stop-line preemption: a junction switches once the vehicle waits at it | learned: emergency vehicles are part of training, and the flags show one waiting or on its way. On top, a green-corridor rule: every junction still ahead of the vehicle requests its phase from the moment it is sent |
+| Waiting time at rush | 122.8 s | **36.0 s** |
 | Code | [`control/fixed_time.py`](src/atsc/control/fixed_time.py) | [`control/rl_controller.py`](src/atsc/control/rl_controller.py) + [`agents/net.py`](src/atsc/agents/net.py) |
 
 What the two share is the part that must not be negotiable: **both** drive the same safety
 FSM, so both pay the same 3 s amber and 2 s all-red, and neither can produce a conflicting
-green. The agents are not allowed to win by cheating the interlocks. One honest caveat:
-`max_green_s: 60` ends a long green, but the FSM also accepts a new request during the amber
-and all-red, so a controller that keeps asking for the same phase can cancel the change and
-keep a side street waiting longer (up to about 113 s in the benchmark runs) — see
-[Known limitations](#known-limitations).
+green. The agents are not allowed to win by cheating the interlocks: a green lasts 10 to 60 s
+whatever the controller asks, a change that has begun always completes, and no direction
+waits more than 70 s for its green (60 s of the other green plus two 5 s clearances).
 
-A third controller, **max-pressure**, is in the benchmark but not on the dashboard. It
-beats the agents at low and medium demand; the results table above says so out loud.
+A third controller, **max-pressure**, is in the benchmark but not on the dashboard. It is the
+stronger baseline: level with the agents in light traffic, behind them under congestion — the
+results section above gives the numbers.
 
 ---
 
@@ -317,7 +380,7 @@ beats the agents at low and medium demand; the results table above says so out l
 | Frontend | hand-written HTML, CSS and `<canvas>` JavaScript in ES modules; all 18 vehicle sprites drawn in code | — (there is no framework and no CDN to lose) |
 | Numerics | NumPy 1.26, pandas + matplotlib for the benchmark plots | — |
 | Config | one `config.yaml`, read by every module | — |
-| Tests | pytest, 189 tests (environment, safety FSM, reward, replay, controllers, emergency preemption and evaluation, benchmark maths, wire protocol, servers, vehicles, page and emergency tracking), run by GitHub Actions on every push, and a Playwright browser check | — |
+| Tests | pytest, 256 tests (environment, observation, safety FSM, reward, training, replay, controllers, config validation, emergency preemption and evaluation, benchmark maths and statistics, model study, wire protocol, servers, vehicles, page and emergency tracking), run by GitHub Actions on every push, and a Playwright browser check | — |
 | Hosting | Render free plan, defined in [`render.yaml`](render.yaml) | the same [`Dockerfile`](Dockerfile) on Spaces / Fly / Railway |
 
 Three of those fallbacks are load-bearing rather than decorative: the hosted site runs
@@ -354,12 +417,14 @@ pip install -r requirements.txt
 python run.py doctor         # environment and dependency check, prints what is missing
 python run.py demo           # train-if-needed, then open the live dashboard
 python run.py train --quick  # 8 episodes, under a minute on a CPU -> models/pretrained/atsc_2x2_quick.pt
-python run.py train --overwrite  # full 112-episode curriculum (~2 CPU minutes); REPLACES the shipped model
-python run.py eval           # 36-run benchmark -> outputs/*.csv, summary and KPI plots
+python run.py train --overwrite  # full 400-episode curriculum (about 8 CPU minutes); REPLACES the shipped model
+python run.py eval           # 150-run benchmark -> outputs/*.csv, summary and KPI plots
 python run.py eval --backend sumo   # the same benchmark on SUMO -> outputs/sumo/
 python run.py sim            # watch the trained policy in SUMO-GUI (needs SUMO)
 python tools/emergency_eval.py      # every emergency type, RL vs fixed-time -> outputs/emergency/
-pytest                       # 189 tests (without Node.js the browser-script tests skip themselves)
+python tools/model_study.py         # model selection, variation between trainings, ablation -> outputs/study/
+python tools/make_results_svg.py    # redraw docs/assets/results.svg from the benchmark summary
+pytest                       # 256 tests (without Node.js the browser-script tests skip themselves)
 python tools/e2e_browser.py --local   # headless-browser check of the dashboard (needs playwright)
 ```
 
@@ -374,33 +439,41 @@ overwrite the shipped checkpoint (and the training log the README quotes) unless
 
 ## How it works
 
-![End-to-end data flow: config.yaml feeds the simulator, the simulator builds a 23-number observation per junction, four shared-weight DQN agents request a phase, the safety FSM gates it, and the resulting lamp state advances the simulator again](docs/assets/architecture.svg)
+![End-to-end data flow: config.yaml feeds the simulator, the simulator builds a 33-number observation per junction, four shared-weight DQN agents request a phase, the safety FSM gates it, and the resulting lamp state advances the simulator again](docs/assets/architecture.svg)
 
 One loop, five stages, and a closed feedback path. `config.yaml` is the only source of
 numbers. The simulator is either SUMO through TraCI or the built-in point-queue model behind
-the identical interface. Every 5 s of simulated time each junction produces a 23-number
+the identical interface. Every 5 s of simulated time each junction produces a 33-number
 observation, its agent asks for a phase, the safety layer decides whether that request is
 legal, and the lamp state it produces is what advances the simulation to the next decision.
 
 ### What one agent computes
 
-![One agent end to end: a 23-number observation, two 128-unit ReLU layers, a dueling head splitting into V(s) and A(s,a), the Q values for the two phases, and the safety gate that has the last word](docs/assets/agent.svg)
+![One agent end to end: a 33-number observation, two 128-unit ReLU layers, a dueling head splitting into V(s) and A(s,a), the Q values for the two phases, and the safety gate that has the last word](docs/assets/agent.svg)
 
-23 numbers in, 2 Q-values out, **19,971 parameters** in total. The observation is 4 queue
+33 numbers in, 2 Q-values out, **21,251 parameters** in total. The observation is 4 queue
 lengths + 4 waiting times + a 2-way phase one-hot + green-time-so-far + 4 emergency flags +
-4 neighbour pressures + 4 neighbour phases. Those last eight are what make the agents
-coordinate: there is no central controller and no message passing, only each junction
-seeing what its neighbours are holding. All four agents share one set of weights and one
-prioritized replay buffer, so every junction's experience trains the same policy.
+4 neighbour pressures + 4 neighbour phases + 2 per-phase pressures + 4 arrival rates + 4
+arrival trends. The eight neighbour values are what make the agents coordinate: there is no
+central controller and no message passing, only each junction seeing what its neighbours are
+holding. The two per-phase pressures are exactly what the max-pressure rule compares. The
+arrival rate (vehicles per second joining an approach over about the last 30 s) and its trend
+(that rate minus the 120 s rate) tell the agent whether demand is building or easing, which
+is what the surge scenario needs. An emergency flag is 1 while an emergency vehicle waits on
+the approach and 0.5 while one is still on its way to it. All four agents share one set of
+weights and one prioritized replay buffer, so every junction's experience trains the same
+policy.
 
 ### Why conflicting greens are impossible
 
 ![Safety finite state machine: green to yellow to all-red to the opposing green, with minimum-green and maximum-green interlocks and a proportional timing strip showing one full cycle](docs/assets/fsm.svg)
 
 The agent never writes to the lamps. It writes a *request*, and the finite-state machine in
-`src/atsc/envs/phases.py` decides what happens: a request arriving before minimum green is
-ignored, a phase reaching maximum green is switched whether the agent asked or not, and
-every change pays a mandatory 3 s amber plus 2 s all-red. Conflicting greens are unreachable
+`src/atsc/envs/phases.py` decides what happens: a request arriving before minimum green waits
+until minimum green has passed, a phase reaching maximum green is switched whether the agent
+asked or not, every change pays a mandatory 3 s amber plus 2 s all-red, and a change that has
+begun cannot be cancelled — a request made during the clearance is acted on from the next
+green. Conflicting greens are unreachable
 states rather than states we try to avoid — `tests/test_phases_safety.py` hammers the machine
 with randomised requests over 18,000 steps and asserts the invariant holds every step.
 
@@ -415,10 +488,10 @@ an ambulance still gets its amber and all-red before the cross street loses its 
 |---|---|
 | **Multi-agent, multi-intersection** | One Double + Dueling DQN per junction on a 2 × 2 grid (`grid_rows`/`grid_cols` scale it), each observing its neighbours, so green-waves emerge instead of being scripted |
 | **Safety by construction** | The phase FSM owns the lamps; the policy only makes requests. Unit-tested over 18,000 randomised steps |
-| **Emergency preemption** | A green corridor on the RL grid (every junction ahead of the vehicle requests its phase from the moment it is sent), stop-line preemption on the baselines, all forced through the same safety gate; clearance time is a benchmark KPI and `tools/emergency_eval.py` measures every emergency type against fixed-time; ambulance, police car and fire engine on the dashboard, each tracked junction by junction on both grids |
-| **Honest benchmarking** | Not just fixed-time: also **max-pressure**, a controller that is near-optimal for throughput — and it wins at low demand, which the results report says out loud |
+| **Emergency vehicles, learned and guaranteed** | Emergency vehicles are part of training, so the policy itself makes way for them; on top, a green corridor on the RL grid and stop-line preemption on the baselines, all forced through the same safety gate. `tools/emergency_eval.py` measures every emergency type against fixed-time over 1,250 matched dispatches each, with and without the rule |
+| **Honest benchmarking** | Not just fixed-time: also **max-pressure**, with ten seeds, paired 95 % intervals, five independently trained models, an ablation and a SUMO run — and the places where RL does not win are in the tables |
 | **Runs on any machine** | SUMO ↔ built-in simulator, PyTorch ↔ a from-scratch NumPy dueling network with a portable checkpoint format, FastAPI ↔ a stdlib HTTP server. Three fallbacks, one behaviour |
-| **Reproducible** | One seed in `config.yaml`, fixed evaluation seeds, tracked CSVs. `run.py eval` regenerates the published numbers byte for byte from the shipped checkpoint, and CI checks that on every push (retraining does not reproduce them — see [Known limitations](#known-limitations)) |
+| **Reproducible** | Fixed evaluation seeds, tracked CSVs. `run.py eval`, `tools/emergency_eval.py` and `tools/model_study.py` regenerate the published numbers byte for byte from the shipped checkpoints, and CI checks that on every push (retraining does not reproduce them — see [Known limitations](#known-limitations)) |
 
 ---
 
@@ -430,8 +503,8 @@ config.yaml                      every number the project uses, in one place
 requirements.txt · environment.yml · pytest.ini
 asgi.py · render.yaml            hosted deployment: entrypoint + Render Blueprint
 Dockerfile · Procfile · requirements-deploy.txt (every package pinned)
-CHANGELOG.md                     release notes
-.github/workflows/ci.yml         CI: the tests, the benchmark reproduced byte for byte, the hosted stack
+CHANGELOG.md                     what version 1.0.0 contains
+.github/workflows/ci.yml         CI: the tests, every published number reproduced byte for byte, the hosted stack
 
 src/atsc/
   config.py · seeding.py · logging_utils.py    config loading, determinism, logs
@@ -440,50 +513,51 @@ src/atsc/
   envs/        traffic_env.py (multi-agent env) · phases.py (safety FSM) · spaces.py (observations)
   agents/      dueling DQN, prioritized replay, Double-DQN learner, Torch and NumPy nets, QMIX
   control/     fixed-time · max-pressure · RL · emergency preemption
-  train/       curriculum trainer and checkpointing
-  eval/        the 36-run benchmark harness, metrics, plots
+  train/       curriculum trainer (with emergency vehicles) and checkpointing
+  eval/        the 150-run benchmark harness, confidence intervals, metrics, plots
   dashboard/   session.py (the race + wire protocol) · server.py (FastAPI/WebSocket) ·
                stdlib_server.py (fallback) · runtime.py, assets.py (headers, static files,
                page templating shared by both servers) · static/ (index.html, styles.css,
                sw.js, js/: main, transport, model, renderer, sprites, charts, tracker, ui)
 
-models/pretrained/atsc_2x2.pt    the shipped checkpoint: 313 KB, 112 training episodes
-tests/                           189 tests: environment, safety, reward, replay, controllers,
-                                 emergency preemption and evaluation, benchmark maths, wire
-                                 protocol, servers, vehicles, page and emergency tracking
+models/pretrained/atsc_2x2.pt    the shipped checkpoint: 171 KB, 400 training episodes, training seed 45
+models/seeds/ · models/ablation/ the five training seeds and the three ablation models of the model study
+tests/                           256 tests: environment, observation, safety, reward, training, replay,
+                                 controllers, config validation, emergency preemption and evaluation,
+                                 benchmark maths and statistics, model study, wire protocol, servers,
+                                 vehicles, page and emergency tracking
 tools/                           emergency_eval.py (every emergency type, RL vs fixed-time) ·
-                                 e2e_browser.py (Playwright check) · bench_server.py (tick/payload/load)
+                                 model_study.py (selection, variation, ablation) · make_results_svg.py
+                                 · e2e_browser.py (Playwright check) · bench_server.py (tick/payload/load)
                                  · record_gif.py (the animation at the top)
 outputs/                         the CSVs, summary and plots this README quotes — tracked on purpose;
-                                 emergency/ holds the emergency-vehicle evaluation
+                                 emergency/ the emergency-vehicle evaluation, study/ the model study,
+                                 sumo/ the benchmark on SUMO
 docs/assets/ · docs/screenshots/ the diagrams, stills and animation above
 ```
 
 ---
 
-## Explaining it in a viva
+## Where to find what
 
 A map from the question to the file that answers it.
 
 | Asked | Point to | One-line answer |
 |---|---|---|
 | Where is the RL *environment*? | `envs/traffic_env.py` | PettingZoo-style parallel multi-agent env; `step()` advances 5 s and returns one reward per junction |
-| What is the *state*? | `envs/spaces.py` | 23 numbers: queues, waits, phase one-hot, green-so-far, emergency flags, and neighbour pressures and phases |
+| What is the *state*? | `envs/spaces.py` | 33 numbers: queues, waits, phase one-hot, green-so-far, emergency flags, neighbour pressures and phases, per-phase pressures, arrival rates and trends |
 | What is the *action*? | `envs/phases.py` | the target green phase — a request, not a command |
 | How is *safety* guaranteed? | `envs/phases.py` (`SignalFSM`) | min/max green + mandatory amber + all-red; conflicting greens are unreachable, verified over 18,000 randomised steps |
-| What is the *reward*? | `envs/traffic_env.py` `_rewards()` | −delay − pressure − switch penalty + emergency bonus; exact maths in [REPORT.md](REPORT.md) §4.3 |
+| What is the *reward*? | `envs/traffic_env.py` `_rewards()` | −delay − pressure − switch penalty + emergency bonus − emergency waiting charge; exact maths in [REPORT.md](REPORT.md) §4.3 |
 | Which *algorithm*? | `agents/double_dqn_agent.py`, `agents/net.py` | Double + Dueling DQN, prioritized replay, target network, Huber loss, gradient clipping |
 | Why *multi-agent*? | `agents/multi_agent.py` | one policy per junction, shared weights, neighbour-aware — coordination without a central controller |
 | How does it *coordinate*? | `envs/spaces.py` | the eight neighbour features; no message passing, no central agent |
-| *Emergency* handling? | `control/emergency.py` | a green corridor (RL) or stop-line preemption (baselines) forces the serving phase, still through the safety FSM |
+| *Emergency* handling? | `train/trainer.py`, `control/emergency.py` | learned (emergency vehicles in training, reward terms, look-ahead flags) plus a rule: a green corridor (RL) or stop-line preemption (baselines), still through the safety FSM |
 | How is an emergency vehicle *followed* on the page? | `dashboard/session.py` (`ev`, `evx`, `ed`), `static/js/tracker.js` | the server reports where each one is in the simulator; the page turns that into the labels, the line above each map and the tracker |
-| Your *baselines*? | `control/fixed_time.py`, `control/max_pressure.py` | an honest fixed 30 s split, and max-pressure — which beats the agents at low demand |
-| How do you *prove* the improvement? | `eval/benchmark.py` | identical seeds, three replicates, per-scenario improvement table and plots |
+| Your *baselines*? | `control/fixed_time.py`, `control/max_pressure.py` | an honest fixed 30 s split, and max-pressure — level with the agents in light traffic |
+| How do you *prove* the improvement? | `eval/benchmark.py`, `tools/model_study.py` | identical seeds, ten replicates, paired 95 % intervals against each baseline, five trained models |
 | No *SUMO*? | `sim/mini_backend.py` | built-in point-queue simulator behind the same interface; the demo still runs |
 | No *PyTorch*? | `agents/net.py` | from-scratch NumPy dueling network with manual backprop and a portable checkpoint format |
-
-The long form — verified file inventory, known weaknesses, and 144 questions with answers —
-is in [docs/VIVA_MASTER.md](docs/VIVA_MASTER.md).
 
 ---
 
@@ -494,15 +568,19 @@ Every module reads [`config.yaml`](config.yaml). Change values, not code.
 ```yaml
 network:   { grid_rows: 2, grid_cols: 2, link_length_m: 200 }   # 3x3 works — retrain first
 signal:    { decision_interval_s: 5, min_green_s: 10, max_green_s: 60, yellow_s: 3, all_red_s: 2 }
-demand:    { base_arrival_vps: 0.10, arterial_boost: 2.2 }      # the E-W arterial carries 2.2x
-rl:        { algo: double_dueling_dqn, neighbor_obs: true, share_parameters: true }
-reward:    { w_wait: 1.0, w_pressure: 0.30, w_switch: 0.20, w_emergency: 5.0 }
+demand:    { base_arrival_vps: 0.10, arterial_boost: 2.2,       # the E-W arterial carries 2.2x
+             peak_center_s: 600, peak_width_s: 240 }            # the surge scenario's peak
+rl:        { algo: double_dueling_dqn, neighbor_obs: true, pressure_obs: true, demand_obs: true,
+             emergency_lookahead: true, share_parameters: true }
+reward:    { w_wait: 1.0, w_pressure: 0.30, w_switch: 0.20, w_emergency: 10.0, w_emergency_wait: 6.0 }
+train:     { episodes: 400, curriculum: [low, medium, high, rush, surge], emergency_gap_s: 300 }
+eval:      { seeds: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9], scenarios: [low, medium, high, rush, surge] }
 emergency: { enabled: true, preemption: true, corridor: [rl], types: { ambulance, police, fire } }
 traffic_mix: { bike: 30, scooter: 22, car: 15, auto: 10, ... }  # cosmetic: what is drawn
 dashboard: { default_scenario: rush, tick_ms: 200, speeds: [0.2, 0.5, 1, 2, 4, 8],
              emergency_slow_motion: 0.2, emergency_result_pause_s: 5, max_clients: 100 }
 qmix:      { enabled: false }        # stretch goal: centralised training, decentralised execution
-seed: 42
+seed: 45                             # the training seed of the shipped model
 ```
 
 The safety numbers are enforced by the environment, not learned and not negotiable: the
@@ -564,10 +642,10 @@ on.
 | [`Procfile`](Procfile) | one line, for platforms that look for it |
 
 `requirements.txt` still installs the full development set. Measured on the deploy stack
-(`pip install -r requirements-deploy.txt`, Python 3.12.6): about **76 MiB** resident at idle
-and **101 MiB** with 100 viewers connected, against a 512 MiB free instance; about **1.5 %**
-of one CPU core at idle and **17 %** with 100 viewers (the free instance has 0.1 CPU); one
-tick costs about **2–3 ms** at 1× (medium or rush hour) and **12–16 ms** at rush 8×,
+(`pip install -r requirements-deploy.txt`, Python 3.12): about **76 MiB** resident at idle
+and **101 MiB** with 100 viewers connected, against a 512 MiB free instance; about **1.2 %**
+of one CPU core at idle and **8 %** with 100 viewers (the free instance has 0.1 CPU); one
+tick costs about **2–3 ms** at 1× (medium or rush hour) and **13 ms** at rush 8×,
 against a 200 ms budget. `GET /healthz` reports the live numbers (version, build, viewers,
 tick cost, payload size, CPU, memory).
 
@@ -582,54 +660,68 @@ the status does not say **Live** — is in
 
 | File | What is in it |
 |---|---|
-| [REPORT.md](REPORT.md) | The methodology: MDP formulation, reward derivation, training protocol, full result tables |
+| [REPORT.md](REPORT.md) | The methodology and every result table: MDP formulation, reward derivation, training protocol, statistics |
 | [EXPLAINER.md](EXPLAINER.md) | Plain-language walkthrough of every module and why it exists |
-| [CHEATSHEET.md](CHEATSHEET.md) | The demo script and the numbers worth knowing by heart |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Hosting the live dashboard: platform choice, exact steps, verification checklist |
-| [docs/VIVA_MASTER.md](docs/VIVA_MASTER.md) | File-by-file verification, honest weaknesses, 144 questions with answers |
-| [outputs/emergency/emergency_results.md](outputs/emergency/emergency_results.md) | Every emergency vehicle type against fixed-time: travel time, waiting time, stops and time to clear a junction, by demand level |
-| [CHANGELOG.md](CHANGELOG.md) | Release notes |
+| [outputs/benchmark_summary.md](outputs/benchmark_summary.md) | The benchmark, with the seed-by-seed comparison against each baseline |
+| [outputs/study/model_study.md](outputs/study/model_study.md) | Model selection on validation seeds, the five training seeds, the ablation |
+| [outputs/sumo/benchmark_summary.md](outputs/sumo/benchmark_summary.md) | The same benchmark on SUMO |
+| [outputs/emergency/emergency_results.md](outputs/emergency/emergency_results.md) | Every emergency vehicle type against fixed-time, with and without the preemption rule, by demand level |
+| [CHANGELOG.md](CHANGELOG.md) | What version 1.0.0 contains |
+
+Numbers are stated once: the headline tables are in this README, everything else is in
+REPORT.md and the `outputs/` files it points to.
 
 ---
 
 ## Known limitations
 
-Stated plainly, because a reviewer will find them anyway. The first three live in code that
-is deliberately left as it is — the safety FSM and the trained model — because every
-published number depends on them; fixing them means retraining and re-benchmarking.
+Stated plainly, because a reviewer will find them anyway.
 
-* **The FSM accepts a new request during amber and all-red.** Conflicting greens still
-  cannot happen (that invariant is tested), but a controller can cancel a phase change
-  mid-clearance and return to the same phase. With the shipped policy about one change in
-  five is cancelled this way, and the longest wait of a side street for its green reached
-  about 113 s in the benchmark runs, although `max_green_s` is 60.
-* **Greens after the first are one second longer than configured** (11–61 s instead of
-  10–60 s): an off-by-one in `phases.py`.
-* **Training treats the time limit as a true ending** (no bootstrapping on the last
-  transition), and **retraining is not bit-reproducible across NumPy versions** — the same
-  112-episode recipe gave a different model on NumPy 2.x than on the pinned 1.26. The
-  published numbers come from the one shipped checkpoint and regenerate exactly from it.
-* **Emergency vehicles queue behind traffic, and the two grids pre-empt differently.** In
-  the point-queue model an emergency vehicle joins the back of a queue and crosses once the
-  vehicles ahead have left. The RL grid clears a green corridor — every junction still ahead
-  of the vehicle requests its phase from the moment it is sent — while the traditional grid
-  pre-empts a junction only once the vehicle waits at its stop line, as a stand-alone signal
-  would. That difference is what puts the police car, on the side street, ahead on the RL
-  grid: with the same preemption on both grids it would be slower there (by 12 % with a
-  corridor on both, 24 % with stop-line preemption on both), because the agents give the side
-  street less green than fixed-time's even split. At rush hour its lead is half a second, within
-  the seed-to-seed spread, and the traditional grid still gets it through first in about a
-  third of the dispatches ([`outputs/emergency/`](outputs/emergency/emergency_results.md)). To
-  see the other two set-ups, run `tools/emergency_eval.py --config` on a copy of `config.yaml`
-  with `emergency.corridor: []` or `[rl, fixed_time]`.
-* **The fixed-time baseline is close to saturation at rush hour** (its east–west green can
-  move about 0.21 vehicles/s against 0.22 arriving), so the −61 % at rush says as much about
-  the baseline as about RL; max-pressure is the fairer comparison and the table reports it.
+* **RL does not beat max-pressure in light traffic.** At low and medium demand the shipped
+  model is level with it (the 95 % interval of the difference includes zero, and at low
+  demand max-pressure is nominally 0.6 s ahead); the average of five retrains is 2.7 s behind
+  at low demand. The agents' advantage is under congestion (−3.0 s at high, −7.3 s at rush
+  demand, in every seed and for every one of the five models).
+* **The shipped model is the best of five.** It was chosen on validation seeds, not on the
+  benchmark seeds, but it is still a selection: `outputs/study/model_study.md` shows the
+  other four, and their spread (a standard deviation of 1.2 s on the mean) is the honest error
+  bar of "what this recipe gives".
+* **The fixed-time baseline is close to saturation at high and rush demand** (its east–west
+  green can move about 0.21 vehicles/s against 0.20–0.22 arriving), so the −56 % and −71 %
+  there say as much about the baseline as about RL; max-pressure is the fairer comparison
+  and every table reports it.
+* **The police car needs the corridor rule, and the two grids are pre-empted differently.**
+  On their own the agents get the ambulance and the fire engine through in less than half of
+  fixed-time's time, but the police car, on the side street, 2 % slower than fixed-time. The
+  shipped set-up gives the RL grid a green corridor and fixed-time stop-line preemption, as
+  a stand-alone signal would have; that difference is what puts the police car 13 % ahead on
+  the RL grid. With the same rule on both grids it is slower there: by 1.4 % with stop-line
+  preemption on both, by 9.9 % with a corridor on both, because the agents give the side
+  street less green than fixed-time's even split. Even in the shipped set-up fixed-time gets
+  the police car through first in 31 % of the dispatches
+  ([`outputs/emergency/`](outputs/emergency/emergency_results.md)). To see the other set-ups,
+  run `tools/emergency_eval.py --config` on a copy of `config.yaml` with
+  `emergency.corridor: []` or `[rl, fixed_time]`.
+* **Emergency vehicles queue behind traffic.** In the point-queue model an emergency vehicle
+  joins the back of a queue and crosses once the vehicles ahead have left; nobody pulls over.
+* **Two additions did not pay off measurably.** In the ablation, removing the per-phase
+  pressure inputs or removing emergency vehicles from training changes the mean waiting time
+  by 0.2–0.4 s, less than the spread between retrains (one retrain each). The demand inputs
+  are the addition that clearly matters (about 4 s).
 * **The built-in simulator is a point-queue model**: no spill-back, no car-following, no
-  lane changing. Lanes, turns and vehicle types on the dashboard are drawn from the
-  simulated queues and links, not simulated individually.
-* **Some observation features saturate**: the waiting-time inputs reach their 1.0 cap on a
-  quarter to a third of busy approaches in heavy traffic.
+  lane changing, on a 2 × 2 grid. Lanes, turns and vehicle types on the dashboard are drawn
+  from the simulated queues and links, not simulated individually. The SUMO run is a check
+  on a second simulator, not a calibration against real traffic, and the policy was not
+  trained on SUMO.
+* **Retraining is not bit-reproducible across library versions.** The published numbers come
+  from the shipped checkpoints and regenerate exactly from them; a retrain with a different
+  NumPy or PyTorch build gives a different model (the variation table shows by how much
+  models differ).
+* **Some observation features saturate**: with five or more vehicles queued on an approach,
+  its waiting-time input is at its 1.0 cap more than half of the time (about 80 % at rush
+  hour), so in heavy traffic the agent tells such approaches apart by queue length and
+  pressure, not by waiting time.
 
 ---
 

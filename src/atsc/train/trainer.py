@@ -4,9 +4,13 @@ Runs episodes across the density curriculum, stores transitions in prioritized r
 updates the Double+Dueling DQN each step, periodically evaluates greedily, and checkpoints
 the best model. Deterministic per-episode seeds make a run repeatable on one machine and
 library stack; a different NumPy / PyTorch build gives a different model (README,
-"Reproducibility"). The last transition of an episode is stored as terminal although the
-episode only hit its time limit - kept as is because that is how the shipped model was
-trained.
+"Reproducibility").
+
+Emergency vehicles are part of training: ``train.emergency_gap_s`` is the mean time between
+dispatches of a randomly chosen type, and no rule-based preemption is attached, so serving
+them is left to the agents (the reward's emergency terms and the emergency flags of the
+observation). An episode ends at its time limit, which is not an ending of the traffic, so
+the last transition is stored as non-terminal and bootstraps like every other.
 """
 from __future__ import annotations
 
@@ -19,10 +23,11 @@ import numpy as np
 from atsc.agents import build_learner
 from atsc.config import project_root
 from atsc.control.rl_controller import default_checkpoint_path
-from atsc.envs.spaces import obs_size
+from atsc import vehicles
+from atsc.envs.spaces import cfg_obs_size
 from atsc.envs.traffic_env import MultiAgentTrafficEnv
 from atsc.logging_utils import get_logger
-from atsc.seeding import derive_seed, seed_everything
+from atsc.seeding import derive_seed, make_rng, seed_everything
 
 log = get_logger("atsc.train")
 
@@ -40,7 +45,9 @@ class Trainer:
         self.env = MultiAgentTrafficEnv(cfg, backend_name="mini")
         self.env._episode_seconds = self.episode_seconds
 
-        self.obs_dim = obs_size(cfg.n_phases, bool(cfg.rl.neighbor_obs))
+        self.obs_dim = cfg_obs_size(cfg)
+        self.emergency_gap_s = float(cfg.train.get("emergency_gap_s", 0) or 0)
+        self.emergency_types = [(e["kind"], e["corridor"]) for e in vehicles.emergency_types(cfg)]
         self.learner = build_learner(cfg, list(self.env.possible_agents),
                                      self.obs_dim, cfg.n_phases, device=device)
 
@@ -125,15 +132,21 @@ class Trainer:
     def _run_episode(self, scenario: str, seed: int):
         env = self.env
         obs = env.reset(scenario=scenario, seed=seed)
+        emg_rng = make_rng(seed, "train-emergency")      # its own stream: traffic is unchanged
+        p_dispatch = (float(cfg_interval(self.cfg)) / self.emergency_gap_s
+                      if self.emergency_gap_s > 0 and self.emergency_types else 0.0)
         ep_reward = 0.0
         steps = 0
         last_loss = None
+        not_terminal = {a: False for a in env.possible_agents}     # a time limit is no ending
         while env.agents:
+            if p_dispatch and emg_rng.random() < p_dispatch \
+                    and env.backend.active_emergencies() < 2:
+                kind, corridor = self.emergency_types[int(emg_rng.integers(len(self.emergency_types)))]
+                env.inject_emergency(corridor, kind=kind)
             actions = self.learner.act(obs, explore=True)
             next_obs, rewards, terminated, truncated, infos = env.step(actions)
-            done = len(env.agents) == 0
-            self.learner.observe(obs, actions, rewards, next_obs,
-                                 {a: done for a in env.possible_agents})
+            self.learner.observe(obs, actions, rewards, next_obs, not_terminal)
             loss = self.learner.learn()
             if loss is not None:
                 last_loss = loss
@@ -155,15 +168,14 @@ class Trainer:
         return score
 
     def _greedy_eval_all(self, seed: int) -> float:
-        """Greedy avg-waiting-time for model selection.
-
-        Averaged over the non-saturated scenarios (low/medium/high). Rush hour is
-        (near-)saturated for every controller and extremely noisy, so including it in the
-        *selection* metric would just add variance; the agent still *trains* on rush.
+        """Greedy avg-waiting-time for model selection: the mean over every scenario of the
+        curriculum, ``train.eval_seeds`` episodes each. The seeds are the same at every
+        evaluation, so two checkpoints are compared on identical traffic, and they are
+        derived from the training seed, so they are not the benchmark's.
         """
-        select_scenarios = [s for s in self.curriculum if s != "rush"] or self.curriculum
-        scores = [self._greedy_eval(scen, seed + i)
-                  for i, scen in enumerate(select_scenarios)]
+        n = max(1, int(self.cfg.train.get("eval_seeds", 1)))
+        scores = [self._greedy_eval(scen, derive_seed(self.cfg.seed, "select", scen, k))
+                  for scen in self.curriculum for k in range(n)]
         return float(np.mean(scores))
 
     def _save(self, best: bool, note: str = "") -> None:
@@ -173,6 +185,10 @@ class Trainer:
             "obs_dim": self.obs_dim,
             "n_actions": self.cfg.n_phases,
             "neighbor_obs": bool(self.cfg.rl.neighbor_obs),
+            "pressure_obs": bool(self.cfg.get_path("rl.pressure_obs", False)),
+            "demand_obs": bool(self.cfg.get_path("rl.demand_obs", False)),
+            "emergency_lookahead": bool(self.cfg.get_path("rl.emergency_lookahead", False)),
+            "seed": int(self.cfg.seed),
             "share_parameters": bool(self.cfg.rl.share_parameters),
             "algo": "qmix" if bool(self.cfg.get_path("qmix.enabled", False))
                     else "double_dueling_dqn",
@@ -180,6 +196,10 @@ class Trainer:
             "note": note,
         }
         self.learner.save(str(self.ckpt_path), metadata=metadata)
+
+
+def cfg_interval(cfg) -> int:
+    return int(cfg.signal.decision_interval_s)
 
 
 def train_main(cfg, quick: bool = False, device: str = "cpu") -> Path:

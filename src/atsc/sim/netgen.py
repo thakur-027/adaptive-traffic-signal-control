@@ -178,8 +178,8 @@ def build_routes(cfg, scenario: str, seed: int) -> Path:
             if params.get("time_varying", False):
                 # gaussian rush profile
                 import math
-                center = params.get("peak_center_frac", 0.5) * horizon
-                width = max(1.0, params.get("peak_width_frac", 0.2) * horizon)
+                center = float(params.get("peak_center_s", 600.0))
+                width = max(1.0, float(params.get("peak_width_s", 240.0)))
                 rate *= 0.6 + 1.0 * math.exp(-0.5 * ((t - center) / width) ** 2)
             n = rng.poisson(rate)
             for _ in range(int(n)):

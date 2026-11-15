@@ -1,7 +1,7 @@
 """Environment API + determinism tests (built-in backend, no torch needed)."""
 import numpy as np
 
-from atsc.envs.spaces import obs_size
+from atsc.envs.spaces import cfg_obs_size
 from atsc.envs.traffic_env import MultiAgentTrafficEnv
 
 
@@ -9,7 +9,8 @@ def test_reset_returns_obs_per_agent(cfg):
     env = MultiAgentTrafficEnv(cfg, backend_name="mini")
     obs = env.reset(scenario="medium", seed=0)
     assert set(obs.keys()) == set(env.possible_agents)
-    dim = obs_size(cfg.n_phases, bool(cfg.rl.neighbor_obs))
+    dim = cfg_obs_size(cfg)
+    assert dim == env.obs_dim == 33          # the shipped configuration
     for v in obs.values():
         assert v.shape == (dim,)
         assert np.isfinite(v).all()

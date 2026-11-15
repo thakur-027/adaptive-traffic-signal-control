@@ -210,6 +210,31 @@ def test_api_cmd_validates(client):
     assert huge.status_code == 413
 
 
+def test_surge_traffic_is_switched_on_over_the_socket_and_over_http(client, session):
+    """The fifth traffic level, end to end: the page's command restarts the shared race on
+    ``surge``, the frames say so, and the previous level comes back the same way."""
+    before = session.scenario
+    assert before != "surge"
+    try:
+        with client.websocket_connect("/ws") as ws:
+            hello = _receive_until(ws, "hello")
+            assert "surge" in [name for name, _d in hello["scen"]]
+            ws.send_text(json.dumps({"a": "scenario", "v": "surge", "i": 41}))
+            assert _receive_until(ws, "ack") == {"t": "ack", "i": 41, "ok": True}
+            for _ in range(200):
+                frame = _receive_until(ws, "f")
+                if frame.get("sc") == "surge":
+                    break
+            else:
+                raise AssertionError("no frame reported the surge scenario")
+            assert session.scenario == "surge"
+        assert client.get("/healthz").json()["scenario"] == "surge"
+        assert client.post("/api/cmd", json={"a": "scenario", "v": before}).json() == {"ok": True}
+        assert client.post("/api/cmd", json={"a": "scenario", "v": "surge"}).json() == {"ok": True}
+    finally:
+        session.set_scenario(before)
+
+
 def test_docs_are_not_exposed(client):
     for path in ("/docs", "/redoc", "/openapi.json"):
         assert client.get(path).status_code == 404

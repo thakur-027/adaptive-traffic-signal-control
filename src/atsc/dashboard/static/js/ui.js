@@ -46,7 +46,7 @@ function speedName(speeds, i) {
   const s = speeds[i];
   return s < 1 ? "slow" : s === 1 ? "normal" : "fast";
 }
-const TRAFFIC = { low: "Light", medium: "Normal", high: "Heavy", rush: "Rush hour" };
+const TRAFFIC = { low: "Light", medium: "Normal", high: "Heavy", rush: "Rush hour", surge: "Surge" };
 const trafficName = (name) => TRAFFIC[name] || (name ? name[0].toUpperCase() + name.slice(1) : "");
 const ICON = { ambulance: "🚑", police: "🚓", fire: "🚒" };
 const iconOf = (kind) => ICON[kind] || "🚨";

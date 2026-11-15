@@ -113,6 +113,29 @@ def test_no_preemption_at_all_when_it_is_switched_off(cfg):
     assert emc.preempted_intersections() == []
 
 
+def test_an_unassisted_controller_gets_no_rule_at_all(cfg):
+    """``emergency.unassisted`` (and mode "none"): nothing is overridden, so an emergency
+    vehicle gets exactly what the base controller asks for."""
+    from atsc.control.emergency import MODES, unassisted_controllers
+    assert MODES == ("stop_line", "corridor", "none") and unassisted_controllers(cfg) == ()
+    raw = copy.deepcopy(dict(cfg))
+    raw["emergency"] = dict(cfg.emergency, corridor=[], unassisted=["rl"])
+    alone = Config(raw)
+    validate_config(alone)
+    topo = build_topology(alone)
+    assert EmergencyController(alone, topo, controller="rl").mode == "none"
+    assert EmergencyController(alone, topo, controller="fixed_time").mode == "stop_line"
+    assert EmergencyController(cfg, topo, controller="rl", mode="none").mode == "none"
+
+    env, emc = _env(alone, "rl")
+    env.inject_emergency("ew")
+    for _ in range(6):                                  # 30 s of the base controller asking for NS
+        env.step({a: NS for a in env.agents})
+        assert emc.preempted_intersections() == []
+        assert all(f.target == NS for f in env.fsms.values())
+    assert env.backend.active_emergencies() == 1, "held at red: nothing pre-empted for it"
+
+
 def test_the_simulator_reports_every_emergency_vehicle_with_the_junctions_ahead(cfg):
     env, _ = _env(cfg, "rl")
     first = env.inject_emergency("ew", kind="fire")

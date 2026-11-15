@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 430" width="1200" height="430"
-     role="img" aria-label="What one agent computes: 23-number observation, two hidden layers, dueling head, Q values, safety-gated request">
+     role="img" aria-label="What one agent computes: 33-number observation, two hidden layers, dueling head, Q values, safety-gated request">
   <title>What one agent computes, end to end</title>
   <defs>
     <linearGradient id="abg" x1="0" y1="0" x2="1" y2="1">
@@ -53,69 +53,55 @@
     <!-- A - observation vector -->
     <rect x="40" y="40" width="4" height="14" rx="2" fill="#38bdf8"/>
     <text x="54" y="52" font-size="11.5" font-weight="700" fill="#93a3c4"
-          textLength="171" lengthAdjust="spacing">OBSERVATION · 23 numbers</text>
+          textLength="171" lengthAdjust="spacing">OBSERVATION · 33 numbers</text>
     <g>
       <rect x="40" y="68" width="210" height="26" rx="7" fill="#ffffff" fill-opacity="0.05"
             stroke="#ffffff" stroke-opacity="0.1"/>
       <rect x="47" y="73" width="16" height="16" rx="5" fill="#38bdf8"/>
-      <text x="55" y="85" font-size="10.5" font-weight="700" fill="#0a1020" text-anchor="middle"
-            textLength="6" lengthAdjust="spacing">4</text>
-      <text x="70" y="85" font-size="10.5" fill="#9fb0d0"
-            textLength="129" lengthAdjust="spacing">queue length per approach</text>
+      <text x="55" y="85" font-size="10.5" font-weight="700" fill="#0a1020" text-anchor="middle">8</text>
+      <text x="70" y="85" font-size="10.5" fill="#9fb0d0">queues + waits, per approach</text>
     </g>
     <g>
       <rect x="40" y="99" width="210" height="26" rx="7" fill="#ffffff" fill-opacity="0.05"
             stroke="#ffffff" stroke-opacity="0.1"/>
-      <rect x="47" y="104" width="16" height="16" rx="5" fill="#38bdf8"/>
-      <text x="55" y="116" font-size="10.5" font-weight="700" fill="#0a1020" text-anchor="middle"
-            textLength="6" lengthAdjust="spacing">4</text>
-      <text x="70" y="116" font-size="10.5" fill="#9fb0d0"
-            textLength="124" lengthAdjust="spacing">waiting time per approach</text>
+      <rect x="47" y="104" width="16" height="16" rx="5" fill="#5eead4"/>
+      <text x="55" y="116" font-size="10.5" font-weight="700" fill="#0a1020" text-anchor="middle">3</text>
+      <text x="70" y="116" font-size="10.5" fill="#9fb0d0">phase one-hot + green time so far</text>
     </g>
     <g>
       <rect x="40" y="130" width="210" height="26" rx="7" fill="#ffffff" fill-opacity="0.05"
             stroke="#ffffff" stroke-opacity="0.1"/>
-      <rect x="47" y="135" width="16" height="16" rx="5" fill="#5eead4"/>
-      <text x="55" y="147" font-size="10.5" font-weight="700" fill="#0a1020" text-anchor="middle"
-            textLength="6" lengthAdjust="spacing">2</text>
-      <text x="70" y="147" font-size="10.5" fill="#9fb0d0"
-            textLength="106" lengthAdjust="spacing">current phase one-hot</text>
+      <rect x="47" y="135" width="16" height="16" rx="5" fill="#f87171"/>
+      <text x="55" y="147" font-size="10.5" font-weight="700" fill="#0a1020" text-anchor="middle">4</text>
+      <text x="70" y="147" font-size="10.5" fill="#9fb0d0">emergency flag per approach</text>
     </g>
     <g>
       <rect x="40" y="161" width="210" height="26" rx="7" fill="#ffffff" fill-opacity="0.05"
             stroke="#ffffff" stroke-opacity="0.1"/>
-      <rect x="47" y="166" width="16" height="16" rx="5" fill="#5eead4"/>
-      <text x="55" y="178" font-size="10.5" font-weight="700" fill="#0a1020" text-anchor="middle"
-            textLength="6" lengthAdjust="spacing">1</text>
-      <text x="70" y="178" font-size="10.5" fill="#9fb0d0"
-            textLength="81" lengthAdjust="spacing">green time so far</text>
+      <rect x="47" y="166" width="16" height="16" rx="5" fill="#a3e635"/>
+      <text x="55" y="178" font-size="10.5" font-weight="700" fill="#0a1020" text-anchor="middle">8</text>
+      <text x="70" y="178" font-size="10.5" fill="#9fb0d0">neighbour pressures and phases</text>
     </g>
     <g>
       <rect x="40" y="192" width="210" height="26" rx="7" fill="#ffffff" fill-opacity="0.05"
             stroke="#ffffff" stroke-opacity="0.1"/>
-      <rect x="47" y="197" width="16" height="16" rx="5" fill="#f87171"/>
-      <text x="55" y="209" font-size="10.5" font-weight="700" fill="#0a1020" text-anchor="middle"
-            textLength="6" lengthAdjust="spacing">4</text>
-      <text x="70" y="209" font-size="10.5" fill="#9fb0d0"
-            textLength="141" lengthAdjust="spacing">emergency flag per approach</text>
+      <rect x="47" y="197" width="16" height="16" rx="5" fill="#fbbf24"/>
+      <text x="55" y="209" font-size="10.5" font-weight="700" fill="#0a1020" text-anchor="middle">2</text>
+      <text x="70" y="209" font-size="10.5" fill="#9fb0d0">pressure of each phase</text>
     </g>
     <g>
       <rect x="40" y="223" width="210" height="26" rx="7" fill="#ffffff" fill-opacity="0.05"
             stroke="#ffffff" stroke-opacity="0.1"/>
-      <rect x="47" y="228" width="16" height="16" rx="5" fill="#a3e635"/>
-      <text x="55" y="240" font-size="10.5" font-weight="700" fill="#0a1020" text-anchor="middle"
-            textLength="6" lengthAdjust="spacing">4</text>
-      <text x="70" y="240" font-size="10.5" fill="#9fb0d0"
-            textLength="93" lengthAdjust="spacing">neighbour pressure</text>
+      <rect x="47" y="228" width="16" height="16" rx="5" fill="#c4b5fd"/>
+      <text x="55" y="240" font-size="10.5" font-weight="700" fill="#0a1020" text-anchor="middle">4</text>
+      <text x="70" y="240" font-size="10.5" fill="#9fb0d0">arrival rate per approach</text>
     </g>
     <g>
       <rect x="40" y="254" width="210" height="26" rx="7" fill="#ffffff" fill-opacity="0.05"
             stroke="#ffffff" stroke-opacity="0.1"/>
-      <rect x="47" y="259" width="16" height="16" rx="5" fill="#a3e635"/>
-      <text x="55" y="271" font-size="10.5" font-weight="700" fill="#0a1020" text-anchor="middle"
-            textLength="6" lengthAdjust="spacing">4</text>
-      <text x="70" y="271" font-size="10.5" fill="#9fb0d0"
-            textLength="81" lengthAdjust="spacing">neighbour phase</text>
+      <rect x="47" y="259" width="16" height="16" rx="5" fill="#c4b5fd"/>
+      <text x="55" y="271" font-size="10.5" font-weight="700" fill="#0a1020" text-anchor="middle">4</text>
+      <text x="70" y="271" font-size="10.5" fill="#9fb0d0">arrival trend per approach</text>
     </g>
     <g font-size="10.5" fill="#7f90b3">
       <text x="40" y="316" textLength="145" lengthAdjust="spacing">one vector per junction, built in</text>
@@ -234,6 +220,6 @@
     <rect x="40" y="376" width="1120" height="32" rx="8" fill="#ffffff" fill-opacity="0.05"
           stroke="#ffffff" stroke-opacity="0.1"/>
     <text x="600" y="396" font-size="10.5" fill="#7f90b3" text-anchor="middle"
-          textLength="653" lengthAdjust="spacing">Double DQN target · Dueling head · prioritized replay · 19,971 parameters · hidden [128,128] · Huber loss · Adam 5e-4 · gamma 0.99</text>
+          textLength="653" lengthAdjust="spacing">Double DQN target · Dueling head · prioritized replay · 21,251 parameters · hidden [128,128] · Huber loss · Adam 5e-4 · gamma 0.99</text>
   </g>
 </svg>
