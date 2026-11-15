@@ -48,7 +48,7 @@ visitors see the page's own **Waking up the server…** screen during that time 
 2. Sign in at <https://dashboard.render.com> with the GitHub account that owns the repo.
 3. **New +** -> **Blueprint**, choose the repository, and let it read `render.yaml`.
 4. Confirm the plan shows **Free**, then **Apply**. The first build takes 2-4 minutes: it
-   installs 38 pinned wheels, so nothing is compiled.
+   installs 22 pinned wheels, so nothing is compiled.
 5. Watch the log for these lines:
 
    ```
@@ -151,7 +151,7 @@ the live site does not use. Always run **one** worker: every visitor shares one 
 | File | Role |
 |---|---|
 | [`asgi.py`](../asgi.py) | the entrypoint. `build_app()` is a factory that needs a live session, so the package has no module-level `app`. This module builds the session, presses play and exposes `app`; it never calls `uvicorn.run()` and never opens a browser. `ATSC_SCENARIO` with a typo is logged and ignored instead of crashing the site. |
-| [`requirements-deploy.txt`](../requirements-deploy.txt) | every runtime package pinned, transitive ones included (38). `websockets` is held at 13.1, the last release before its legacy server API — the one uvicorn 0.30.1 uses — was deprecated. |
+| [`requirements-deploy.txt`](../requirements-deploy.txt) | every runtime package pinned, transitive ones included (22). `websockets` needs no hold: uvicorn 0.54.0's default WebSocket implementation uses the library's Sans-I/O API, not its deprecated legacy server API. |
 | [`render.yaml`](../render.yaml) | the Render Blueprint: free plan, `autoDeploy` from `main`, build and start commands, `/healthz` health check, Python 3.12.6. |
 | [`Dockerfile`](../Dockerfile) / [`.dockerignore`](../.dockerignore) | Spaces / Fly / Railway / local container; the ignore file keeps the build context to what the server reads (and keeps the dashboard's own `.svg`). |
 | [`Procfile`](../Procfile) | one line, the same start command, for platforms that look for it. |

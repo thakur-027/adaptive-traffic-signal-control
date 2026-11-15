@@ -1,5 +1,5 @@
 # ==========================================================================
-#  AI-Based Adaptive Traffic Signal Control System using Reinforcement Learning
+#  Adaptive Traffic Signal Control
 #  Pinned, mutually-compatible, CPU-friendly dependencies (Python 3.10 - 3.12)
 # --------------------------------------------------------------------------
 #  Windows (operator's target):  pip install -r requirements.txt
@@ -25,11 +25,12 @@ gymnasium==0.29.1
 PyYAML==6.0.1
 
 # --- Dashboard (FastAPI + WebSocket ASGI server) ---
-fastapi==0.111.0
-uvicorn[standard]==0.30.1
+fastapi==0.162.5
+uvicorn[standard]==0.54.0
 
 # --- Testing ---
 pytest==8.2.0
+httpx==0.28.1
 
 # --- Optional logging (import-guarded in code; safe to remove) ---
 # tensorboard==2.16.2

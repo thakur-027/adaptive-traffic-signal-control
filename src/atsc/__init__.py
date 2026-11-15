@@ -1,5 +1,5 @@
 """
-atsc — AI-Based Adaptive Traffic Signal Control System using Reinforcement Learning.
+atsc — Adaptive Traffic Signal Control.
 
 A multi-agent Deep-RL controller (Double + Dueling DQN with Prioritized Experience
 Replay) for coordinated traffic-signal control on a grid of intersections, running on

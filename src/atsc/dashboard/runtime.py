@@ -14,7 +14,7 @@ from typing import Any, Callable, Deque, Dict, Optional, Tuple
 
 from atsc.dashboard.assets import build_id, content_type, resolve_static
 
-try:  # orjson ships with FastAPI 0.111's dependency set; json is the fallback
+try:  # orjson is pinned in requirements-deploy.txt; json is the fallback
     import orjson as _orjson
 except Exception:  # pragma: no cover - depends on the environment
     _orjson = None

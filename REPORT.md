@@ -1,4 +1,4 @@
-# AI-Based Adaptive Traffic Signal Control System using Reinforcement Learning
+# Adaptive Traffic Signal Control
 ### Project Report
 
 | | |
